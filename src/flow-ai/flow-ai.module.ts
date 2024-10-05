@@ -7,6 +7,7 @@ import { ChainsModule } from 'src/chains/chains.module';
 import { FlowAiModuleOptions } from './flow-ai.types';
 import { FlowAiController } from './flow-ai.controller';
 import { DynamicFlowService } from './dynamic-flow.service';
+import { FaqService } from '../faq/faq.service';
 import { MongooseModule, getModelToken } from '@nestjs/mongoose'; // Import getModelToken
 import { Interaction, InteractionSchema } from '../schemas/interaction.schema';
 import { FlowTreeDocument, FlowTreeSchema } from '../schemas/flowTree.schema';
@@ -32,6 +33,7 @@ import { RelevanceCheckService } from './response-relevance.service';
     DynamicFlowService,
     FlowAiService,
     RelevanceCheckService,
+    FaqService
   ],
   imports: [
     MongooseModule.forFeature([{ name: Interaction.name, schema: InteractionSchema },
@@ -57,8 +59,9 @@ export class FlowAiModule {
         chainsService: ChainsService,
         dynamicFlowService: DynamicFlowService,
         relevanceCheckService: RelevanceCheckService,
+        counterService: CounterService,
+        faqService: FaqService,
 
-        counterService: CounterService
       ) => {
         return new FlowAiService(
           interactionModel,
@@ -69,7 +72,8 @@ export class FlowAiModule {
           options,
           dynamicFlowService,
           relevanceCheckService,
-          counterService
+          counterService,
+          faqService,
         );
       },
       inject: [
@@ -80,7 +84,8 @@ export class FlowAiModule {
         ChainsService,
         DynamicFlowService,
         RelevanceCheckService,
-        CounterService
+        CounterService,
+        FaqService
       ],
     };
 

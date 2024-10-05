@@ -5,6 +5,11 @@ import { flowPrompt } from '../assets/prompts/flow-prompt';
 import { improvePrompt } from '../assets/prompts/improvement-prompt';
 import { userDonePrompt } from '../assets/prompts/userDone-prompt';
 import { analyzeInputPrompt } from '../assets/prompts/analyzeInput-prompt';
+import { initialGreetingPrompt } from '../assets/prompts/initalGreeting-prompt';
+import { logicalEndPrompt } from '../assets/prompts/logicalEnd-prompt';
+import { refineTextPrompt } from '../assets/prompts/refineText-prompt';
+import { handleOptionPrompt } from '../assets/prompts/handleOption-prompt';
+// import { checkInfoPrompt } from '../assets/prompts/checkInfo-prompt';
 
 @Injectable()
 export class DynamicFlowService {
@@ -69,8 +74,8 @@ export class DynamicFlowService {
 
       const aiResponse = response.choices[0].message.content.trim();
       let parsedResponse = JSON.parse(aiResponse); // Parse the JSON response
+      const message = parsedResponse.message;
 
-      const message = parsedResponse.message || "No response generated.";
       const followUpPrompts = [message];
 
       return { message, followUpPrompts };
@@ -82,16 +87,7 @@ export class DynamicFlowService {
 
 
   async generateInitialGreeting(userInput: string, nodeDescription: string): Promise<string> {
-    const prompt = `You are an AI assistant for an information based chatbot. 
-    The user has just started a conversation and their input is: "${userInput}". 
-    Your task is to respond in a friendly and helpful way by introducing the services available. 
-    **Extract the company information from "${nodeDescription}" and use it to introduce yourself
-    Use the following description to help shape your response: "${nodeDescription}".
-    Return a personalized and relevant greeting that acknowledges the user's input and introduces the services in a natural way.
-    
-    Your response should be in JSON format and only contain a single object named greeting with the value for the greeting.
-    `;
-
+    const prompt = initialGreetingPrompt(userInput, nodeDescription);
     try {
       const response = await this.aiModel.chat.completions.create({
         model: "gpt-4o-mini",
@@ -117,26 +113,10 @@ export class DynamicFlowService {
     }
   }
 
-  async logicalEnd(userInput, nodesPromise, flow_start): Promise<string> {
+  async logicalEnd(userInput, nodesPromise, flow_start, messages): Promise<string> {
     const nodes = await nodesPromise;
     const options = nodes.map(node => `${node.name}: ${node.description}`);
-    const prompt = `
-        Given the "${userInput}", please check if the user's input indicates that they are done providing information or do not need more help and are wanting the conversation to end. 
-
-        Analyze whether the "${userInput}" contains explicit language that strongly suggests the user wants to **end the conversation**, such as phrases like "I am done," "That will be all," or "I don’t need any more help." Refer to the "${userInput}" and "${flow_start}" and do not interpret partial statements (e.g., "I think that is enough for **particular section**") or statements related to a specific part of the process as a request to stop the conversation. 
-
-        Once that has been established, return with a generic concluding message thanking the user for contacting.
-
-        If the user intends to keep the conversation going, respond with 'No relevant node found'.
-
-        Answer with the name of the relevant ending message or 'Null', if user intends to keep the conversation going.
-      
-        Respond with a JSON object in the following format:
-            {"endMessage": "message"}
-        
-        Replace "message" with the relevant concluding remark or 'Null', if user intends to keep the conversation going.
-        `;
-
+    const prompt = logicalEndPrompt(userInput, nodesPromise,flow_start,messages);
     try {
       const response = await this.aiModel.chat.completions.create({
         model: "gpt-4o-mini",
@@ -151,9 +131,7 @@ export class DynamicFlowService {
         console.error('endMessage not found in response:', parsedResponse);
         throw new Error("endMessage is missing from the AI response.");
       }
-
-      const endMessage = parsedResponse.endMessage.toLowerCase();
-
+      const endMessage = parsedResponse.endMessage;
       return endMessage
     } catch (error) {
       console.error('Error processing AI response:', error);
@@ -162,20 +140,7 @@ export class DynamicFlowService {
   }
 
   async refineFollowupText(userInput: string, nodeDescription: string, flow_start: string, options?: string[]): Promise<string> {
-
-    const prompt = `You are a helpful AI assistant. The user asked: "${userInput}". 
-    Based on the node description "${nodeDescription}" and "${flow_start}", respond to the user in a conversational manner.
-    
-    **Your response should be accurate and consistent with the "${nodeDescription}", donot diverge from that.** 
-
-    **Also ask if user is interested in any more information relevant to the "${nodeDescription}" or any other thing.**
-
-    Return a minimalistic conversational response to the user incorporating the node description.
-
-
-    Your response should be in JSON format and only contain a single object named text with the value for the conversation.
-    `;
-
+    const prompt = refineTextPrompt(userInput, nodeDescription,flow_start,options);
     try {
       const response = await this.aiModel.chat.completions.create({
         model: "gpt-4o-mini",
@@ -184,17 +149,13 @@ export class DynamicFlowService {
         ],
         response_format: { type: "json_object" },
       });
-
       const aiResponse = response.choices[0].message.content;
       const parsedResponse = JSON.parse(aiResponse);
-
       if (!parsedResponse.text) {
         console.error('text not found in response:', parsedResponse);
         throw new Error("text is missing from the AI response.");
       }
-
       return parsedResponse.text;
-
     } catch (error) {
       console.error('Error refining followup text:', error);
       throw error;
@@ -202,18 +163,7 @@ export class DynamicFlowService {
   }
 
   async handleOption(userInput: string, nodeDescription: string, options: string[]): Promise<string> {
-    const prompt = `
-
-    Question: ${nodeDescription}\nOptions: ${options}\nUser Input: ${userInput}\nWhich option does this input best match? Simply return the option. Donot add any sentence etc before or after. 
-
-    It is possible that best match is not found, return 'Null' in that case.
-    
-    Respond with a JSON object in the following format:
-      {"bestMatch": "match"}
-        
-    Replace "match" with the matched option or 'Null' if no option is accurately matched.
-    `;
-
+    const prompt = handleOptionPrompt(userInput, nodeDescription,options);
     try {
       const response = await this.aiModel.chat.completions.create({
         model: "gpt-4o-mini",
@@ -230,7 +180,6 @@ export class DynamicFlowService {
         console.error('bestMatch not found in response:', parsedResponse);
         throw new Error("bestMatch is missing from the AI response.");
       }
-      console.log('bm', parsedResponse.bestMatch);
       return parsedResponse.bestMatch;
 
     } catch (error) {
@@ -238,6 +187,33 @@ export class DynamicFlowService {
       throw error;
     }
   }
+
+  // async checkInfo(description: string, messages: { role: string, content: string }[]): Promise<string> {
+  //   let conversationHistory = messages.map(msg => `${msg.role === 'user' ? 'User:' : 'System:'} ${msg.content}`).join('\n');
+  //   const prompt = checkInfoPrompt(description, conversationHistory);
+  //   try {
+  //     const response = await this.aiModel.chat.completions.create({
+  //       model: "gpt-4o-mini",
+  //       messages: [
+  //         {
+  //           role: 'system',
+  //           content: prompt
+  //         },
+  //         {
+  //           role: 'user',
+  //           content: description
+  //         }
+  //       ],
+  //       response_format: { type: "json_object" },
+  //     });
+  //     const aiResponse = response.choices[0].message.content.trim();
+  //     let parsedResponse = JSON.parse(aiResponse);
+  //     const info = parsedResponse.info.trim().toLowerCase();
+  //     return info;
+  //   } catch (error) {
+  //     throw new Error('Failed to determine if user is done');
+  //   }
+  // }
 
 
   async checkIfUserIsDone(description: string, messages: { role: string, content: string }[]): Promise<string> {
@@ -328,6 +304,4 @@ export class DynamicFlowService {
       throw new InternalServerErrorException('Failed to get AI response');
     }
   }
-
-
 }

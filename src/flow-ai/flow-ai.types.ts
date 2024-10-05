@@ -12,7 +12,6 @@ export enum IntentType {
   SELECTION = 'selection', // choices and options
   TEXT = 'text',  // plain text interactions
   INTERMEDIATE = 'intermediate', // transitions within the dialoge flow
-
 }
 
 export type FlowTree = {
@@ -24,7 +23,6 @@ export type FlowTree = {
   child?: FlowTree; // optional for linear flows
   schema?: z.ZodType<any, any, any>; // optional schema for validation
 };
-
 
 export interface ClassificationItem {
   intent: string; // classified intent

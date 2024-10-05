@@ -16,6 +16,7 @@ export class RelevanceCheckService {
         Step 3: Given the user's input: "${userInput}", select the most relevant option from the following list:\n${options.join('\n')}
         Step 4: Answer with the name of the most relevant node. 
     
+        Strictly match with the most relevant node, if you are unsure or not confirmed about the answer, do not assume a relevant node.
         If none of the options are relevant to the user's input, respond with 'No relevant node found'.
         Answer with the name of the most relevant node or 'No relevant node found'
       
