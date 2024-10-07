@@ -94,7 +94,7 @@ export class FlowAiService {
     // Generate or use existing conversation ID
     const conversationIdResolved = conversationId || uuidv4(); // if not create
     const existingConversation = await getConversation(this.conversationModel, userId, conversationIdResolved); // fetch existing conversation
-    const pdfPath = `./uploads/file-${userId}-${conversationId}-.pdf`;
+    const pdfPath = `./uploads/files-${userId}-${conversationId}-.pdf`;
     let fileExists = false;
     let messages: { role: string, content: string }[] = []; // array for conversation history
 
