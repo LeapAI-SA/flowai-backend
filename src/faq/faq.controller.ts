@@ -5,9 +5,5 @@ import { FaqService } from './faq.service';
 export class FaqController {
   constructor(private readonly faqService: FaqService) {}
 
-  @Post()
-  async queryFAQ(@Body() body: { question: string; collection: string }) {
-    const { question, collection } = body;
-    return this.faqService.queryFAQ(question, collection);
-  }
+  
 }

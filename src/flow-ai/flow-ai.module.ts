@@ -2,18 +2,19 @@ import { Module, DynamicModule } from '@nestjs/common';
 import { FlowAiService } from './flow-ai.service';
 import { LanguageDetectorModule } from 'src/language-detector/language-detector.module';
 import { LanguageDetectorService } from 'src/language-detector/language-detector.service';
-import { ChainsService } from 'src/chains/chains.service';
-import { ChainsModule } from 'src/chains/chains.module';
+// import { ChainsService } from 'src/chains/chains.service';
+// import { ChainsModule } from 'src/chains/chains.module';
 import { FlowAiModuleOptions } from './flow-ai.types';
 import { FlowAiController } from './flow-ai.controller';
 import { DynamicFlowService } from './dynamic-flow.service';
+import { FaqService } from '../faq/faq.service';
 import { MongooseModule, getModelToken } from '@nestjs/mongoose'; // Import getModelToken
 import { Interaction, InteractionSchema } from '../schemas/interaction.schema';
 import { FlowTreeDocument, FlowTreeSchema } from '../schemas/flowTree.schema';
 import { Conversation, ConversationSchema } from '../schemas/creator-conversation.schema';
 import { CounterService } from '../counter/counter.service'; // Correct path as necessary
 import { CounterModule } from '../counter/counter.module'; // Correct path as necessary
-
+import { HttpModule } from '@nestjs/axios';
 import { Model } from 'mongoose';
 import OpenAI from 'openai';
 import { RelevanceCheckService } from './response-relevance.service';
@@ -32,6 +33,7 @@ import { RelevanceCheckService } from './response-relevance.service';
     DynamicFlowService,
     FlowAiService,
     RelevanceCheckService,
+    FaqService
   ],
   imports: [
     MongooseModule.forFeature([{ name: Interaction.name, schema: InteractionSchema },
@@ -40,8 +42,9 @@ import { RelevanceCheckService } from './response-relevance.service';
 
     ]),
     LanguageDetectorModule,
-    ChainsModule,
-    CounterModule
+    //ChainsModule,
+    CounterModule,
+    HttpModule
   ],
   exports: [FlowAiService],
 })
@@ -54,22 +57,24 @@ export class FlowAiModule {
         flowTreeModel: Model<FlowTreeDocument>,
         conversationModel: Model<Conversation>,
         languageDetectorService: LanguageDetectorService,
-        chainsService: ChainsService,
+        //chainsService: ChainsService,
         dynamicFlowService: DynamicFlowService,
         relevanceCheckService: RelevanceCheckService,
+        counterService: CounterService,
+        faqService: FaqService,
 
-        counterService: CounterService
       ) => {
         return new FlowAiService(
           interactionModel,
           flowTreeModel,
           conversationModel,
           languageDetectorService,
-          chainsService,
+          //chainsService,
           options,
           dynamicFlowService,
           relevanceCheckService,
-          counterService
+          counterService,
+          faqService,
         );
       },
       inject: [
@@ -77,17 +82,18 @@ export class FlowAiModule {
         getModelToken(FlowTreeDocument.name),
         getModelToken(Conversation.name),
         LanguageDetectorService,
-        ChainsService,
+        //ChainsService,
         DynamicFlowService,
         RelevanceCheckService,
-        CounterService
+        CounterService,
+        FaqService
       ],
     };
 
     return {
       module: FlowAiModule,
       providers: [flowAiServiceProvider],
-      imports: [LanguageDetectorModule, ChainsModule, MongooseModule.forFeature([{ name: Interaction.name, schema: InteractionSchema },
+      imports: [LanguageDetectorModule, MongooseModule.forFeature([{ name: Interaction.name, schema: InteractionSchema },
       { name: FlowTreeDocument.name, schema: FlowTreeSchema },
       { name: Conversation.name, schema: ConversationSchema }
       ])],

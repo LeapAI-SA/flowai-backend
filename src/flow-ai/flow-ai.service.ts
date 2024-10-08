@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InternalServerErrorException, NotFoundException } from '@nestjs/common';
-import { ChainsService } from 'src/chains/chains.service';
+// import { ChainsService } from 'src/chains/chains.service';
 import { LanguageDetectorService } from 'src/language-detector/language-detector.service';
 import z from 'zod';
 import {
@@ -9,6 +9,7 @@ import {
   FlowTree,
 } from './flow-ai.types';
 import { DynamicFlowService } from './dynamic-flow.service';
+import { FaqService } from '../faq/faq.service';
 import { Interaction } from '../schemas/interaction.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -23,6 +24,8 @@ import { buildMessages } from '../utilis/Interaction/messageBuilder';
 import { createConversation } from '../utilis/Conversation/conversationCreator';
 import { createInteraction } from '../utilis/Interaction/interactionCreator';
 import { getConversation } from '../utilis/Conversation/getConversation';
+import * as fs from 'fs';
+
 
 @Injectable()
 export class FlowAiService {
@@ -35,11 +38,12 @@ export class FlowAiService {
     @InjectModel(FlowTreeDocument.name) private flowTreeModel: Model<FlowTreeDocument>,
     @InjectModel(Conversation.name) private conversationModel: Model<Conversation>,
     private readonly languageDetectorService: LanguageDetectorService,
-    private readonly chainsService: ChainsService,
+    //private readonly chainsService: ChainsService,
     private readonly options: FlowAiModuleOptions,
     private readonly dynamicFlowService: DynamicFlowService,
     private readonly relevanceCheckService: RelevanceCheckService,
-    private readonly counterService: CounterService
+    private readonly counterService: CounterService,
+    private readonly faqService: FaqService,
 
   ) {
     this.model = options.model;
@@ -66,7 +70,7 @@ export class FlowAiService {
   }
 
   async loadTree(treeId: string): Promise<FlowTree> {
-    const flowTreeDocument = await this.flowTreeModel.findOne({treeId });
+    const flowTreeDocument = await this.flowTreeModel.findOne({ treeId });
 
     if (!flowTreeDocument) {
       throw new NotFoundException(`FlowTree not found for treeId ${treeId}`);
@@ -85,13 +89,73 @@ export class FlowAiService {
     return flowTreeObj; // Return the actual tree object
   }
 
-  async createDynamicChatbot(description: string, refinedDescription: string, userId: string, conversationId: string | undefined): Promise<any> {
+  async handleDynamicFlowCreation(
+    dynamicFlowService,
+    conversationModel,
+    faqService,
+    userId,
+    conversationIdResolved,
+    description,
+    refinedDescription,
+    finalRefinedDescription,
+    messages,
+    pdfPath,
+    fileExists
+  ): Promise<{ treeId: string, dynamicFlowTree: any }> {
+    const response = await dynamicFlowService.generateEnhancedPrompt(finalRefinedDescription, messages); //returns json that needs to be converted
+
+    let descriptionObject: any;
+    try {
+      descriptionObject = JSON.parse(response);
+    } catch (parseError) {
+      console.error('Error parsing description JSON:', parseError);
+      throw new InternalServerErrorException('Invalid JSON format in description');
+    }
+    const improvePrompt = descriptionObject.improvePrompt;
+    const dynamicFlowTree = await this.dynamicFlowService.generateDynamicFlow(improvePrompt);
+    const finalConversation = {
+      userId,
+      conversationId: conversationIdResolved,
+      conversationStage: 'Completed',
+      description,
+      refinedDescription, // Store only the current input
+      followUpPrompts: [],
+      aiResponse: JSON.stringify(dynamicFlowTree)
+    };
+    await createConversation(this.conversationModel, finalConversation);
+    const savedFlowTree = await this.saveDynamicFlowTree(userId, finalRefinedDescription, dynamicFlowTree);
+    const treeId = savedFlowTree.treeId
+    try {
+      fileExists = fs.existsSync(pdfPath);
+    } catch (error) {
+      console.error('Error checking file existence:', error);
+      throw new InternalServerErrorException('Error checking for file existence');
+    }
+    if (fileExists) {
+      await this.faqService.processPDFandAddToCollection(pdfPath, treeId, userId);
+    }
+    return { treeId, dynamicFlowTree };
+  }
+
+
+  async createDynamicChatbot(description: string, refinedDescription: string, userId: string, conversationId: string | undefined, file: Express.Multer.File): Promise<any> {
     // Generate or use existing conversation ID
     const conversationIdResolved = conversationId || uuidv4(); // if not create
     const existingConversation = await getConversation(this.conversationModel, userId, conversationIdResolved); // fetch existing conversation
+    const pdfPath = `./uploads/files-${userId}-${conversationId}-.pdf`;
+    let fileExists = false;
+    let fileUploaded = false;
+    fileExists = fs.existsSync(pdfPath);
+    if (fileExists) {
+      fileUploaded = true
+    }
     let messages: { role: string, content: string }[] = []; // array for conversation history
 
     let finalRefinedDescription = description;
+    let conversationStage;
+    if (existingConversation) {
+      conversationStage = existingConversation[existingConversation.length - 1].conversationStage;
+    }
 
     if (existingConversation && existingConversation.length > 0) { // if conversation is existing
       // Build finalRefinedDescription from previous conversations
@@ -124,38 +188,120 @@ export class FlowAiService {
       messages.push({ role: 'user', content: refinedDescription });
     }
 
-    const userDone = await this.dynamicFlowService.checkIfUserIsDone(refinedDescription, messages);
-
-    if (userDone == 'true') {
-      const response = await this.dynamicFlowService.generateEnhancedPrompt(finalRefinedDescription, messages); //returns json that needs to be converted
-      let descriptionObject: any;
-      try {
-        descriptionObject = JSON.parse(response);
-      } catch (parseError) {
-        console.error('Error parsing description JSON:', parseError);
-        throw new InternalServerErrorException('Invalid JSON format in description');
-      }
-      const improvePrompt = descriptionObject.improvePrompt;
-      const dynamicFlowTree = await this.dynamicFlowService.generateDynamicFlow(improvePrompt);
-
-      const finalConversation = {
+    if (conversationStage === 'Awaiting PDF') {
+      const { treeId, dynamicFlowTree } = await this.handleDynamicFlowCreation(
+        this.dynamicFlowService,
+        this.conversationModel,
+        this.faqService,
         userId,
-        conversationId: conversationIdResolved,
+        conversationIdResolved,
         description,
-        refinedDescription, // Store only the current input
-        followUpPrompts: [],
-        aiResponse: JSON.stringify(dynamicFlowTree)
-      };
-      await createConversation(this.conversationModel, finalConversation);
-      const savedFlowTree= await this.saveDynamicFlowTree(userId, finalRefinedDescription, dynamicFlowTree);
-      const treeId = savedFlowTree.treeId
-      return {treeId,dynamicFlowTree};
-    } else {
-      const analysis = await this.dynamicFlowService.analyzeInput(finalRefinedDescription, messages);
+        refinedDescription,
+        finalRefinedDescription,
+        messages,
+        pdfPath,
+        fileExists
+      );
+      return { treeId, dynamicFlowTree };
+    }
+    if (conversationStage === 'Awaiting Confirmation') {
+      const endCheck = await this.dynamicFlowService.confirmUserisDone(finalRefinedDescription, messages,); //returns json that needs to be
+      if (endCheck == 'true') {
+        const { treeId, dynamicFlowTree } = await this.handleDynamicFlowCreation(
+          this.dynamicFlowService,
+          this.conversationModel,
+          this.faqService,
+          userId,
+          conversationIdResolved,
+          description,
+          refinedDescription,
+          finalRefinedDescription,
+          messages,
+          pdfPath,
+          fileExists
+        );
+        return { treeId, dynamicFlowTree };
+      }
+      else {
+        const analysis = await this.dynamicFlowService.analyzeInput(finalRefinedDescription, messages, fileUploaded);
+        const ongoingConversation = {
+          userId,
+          conversationId: conversationIdResolved,
+          description,
+          conversationStage: 'collectingInfo',
+          refinedDescription, // Store only the current input
+          followUpPrompts: analysis.followUpPrompts,
+          aiResponse: JSON.stringify(analysis)
+        };
+        await createConversation(this.conversationModel, ongoingConversation);
+        return {
+          complete: false,
+          conversationId: conversationIdResolved,
+          followUpPrompts: analysis.followUpPrompts,
+          refinedDescription: finalRefinedDescription,
+          description
+        };
+      }
+    }
+
+    const userStatus = await this.dynamicFlowService.checkIfUserIsDone(refinedDescription, messages);
+    if (userStatus == 'true') {
+      if (fileUploaded) {
+        const pdfUploadPrompt =
+          'Do you have any further information you would like to provide to help with building your chatbot?';
+        const ongoingConversation = {
+          userId,
+          conversationId: conversationIdResolved,
+          description,
+          conversationStage: 'Awaiting Confirmation',
+          refinedDescription,
+          followUpPrompts: [pdfUploadPrompt],
+          aiResponse: JSON.stringify({
+            message: pdfUploadPrompt,
+            fileUploaded: fileUploaded
+          }),
+        };
+        await createConversation(this.conversationModel, ongoingConversation);
+        return {
+          complete: false,
+          conversationId: conversationIdResolved,
+          followUpPrompts: [pdfUploadPrompt],
+          refinedDescription: finalRefinedDescription,
+          description
+        };
+      }
+      else {
+        const pdfUploadPrompt =
+          'Do you have any PDF to share with me for additional information?';
+        const ongoingConversation = {
+          userId,
+          conversationId: conversationIdResolved,
+          description,
+          conversationStage: 'Awaiting PDF',
+          refinedDescription,
+          followUpPrompts: [pdfUploadPrompt],
+          aiResponse: JSON.stringify({
+            message: pdfUploadPrompt,
+            fileUploaded: fileUploaded
+          }),
+        };
+        await createConversation(this.conversationModel, ongoingConversation);
+        return {
+          complete: false,
+          conversationId: conversationIdResolved,
+          followUpPrompts: [pdfUploadPrompt],
+          refinedDescription: finalRefinedDescription,
+          description
+        };
+      }
+    }
+    else {
+      const analysis = await this.dynamicFlowService.analyzeInput(finalRefinedDescription, messages, fileUploaded);
       const ongoingConversation = {
         userId,
         conversationId: conversationIdResolved,
         description,
+        conversationStage: 'collectingInfo',
         refinedDescription, // Store only the current input
         followUpPrompts: analysis.followUpPrompts,
         aiResponse: JSON.stringify(analysis)
@@ -181,10 +327,12 @@ export class FlowAiService {
     classifyFollowup: boolean = false,
     lang: string = '',
   ) {
-    this.flowTree = await this.loadTree(treeId);
-
-    if (typeof this.flowTree.name !== 'string') {
-      throw new Error('Flow tree name property is missing or not a string');
+    try {
+      this.flowTree = await this.loadTree(treeId);
+    } catch (error) {
+      console.error('Error loading flow tree:', error);
+      // Handle the case where the flow tree does not exist
+      this.flowTree = null;
     }
 
     const path: ClassificationItem[] = [];
@@ -200,77 +348,51 @@ export class FlowAiService {
     const interactionData = {
       sessionId,
       userId,
-      query,
+      query: query || "",
       flowStart: flow_start,
       followupValue: lastUserInput,
       aiResponse: '',
       createdAt: new Date(),
     };
-
     const existingInteractions = await this.interactionModel.find({ userId, sessionId }).sort({ createdAt: 1 }).exec();
     let messages = buildMessages(existingInteractions, lastUserInput);
 
     while (true) {
       let node = this.findByName(this.flowTree, name); // searches node by name
 
-      const endNodeCheck = await this.dynamicFlowService.logicalEnd(lastUserInput, allNodes, flow_start);
+      const endNodeCheck = await this.dynamicFlowService.logicalEnd(lastUserInput, allNodes, flow_start, messages);
       if (endNodeCheck !== 'Null') {
+        interactionData.aiResponse = endNodeCheck;
+        const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+        return {
+          complete: true,
+          text: endNodeCheck
+        };
+      }
 
-        if (!flow_start) {
-          // Attempt to find the most relevant node
-          let mostRelevantNode = await this.relevanceCheckService.findMostRelevantNode(lastUserInput, allNodes, flow_start);
-          // console.log('MostRelevantNodes:', JSON.stringify(mostRelevantNode, null, 2));
+      if (!flow_start) {
+        // Attempt to find the most relevant node
+        let mostRelevantNode = await this.relevanceCheckService.findMostRelevantNode(lastUserInput, allNodes, flow_start);
+        // console.log('MostRelevantNodes:', JSON.stringify(mostRelevantNode, null, 2));
 
-          if (mostRelevantNode) {
-            node = mostRelevantNode;
+        if (mostRelevantNode) {
+          node = mostRelevantNode;
 
-            // Process the node based on its structure
-            if (node.children || (node.child && !node.schema)) {
-              const childrenArray = node.children || [node.child];
+          // Process the node based on its structure
+          if (node.children || (node.child && !node.schema)) {
+            const childrenArray = node.children || [node.child];
 
-              if (childrenArray.length === 1 && (childrenArray[0].children || childrenArray[0].schema)) {
-                // console.log('Only one child with further children or schema, proceeding to child node.');
-                node = childrenArray[0];
+            if (childrenArray.length === 1 && (childrenArray[0].children || childrenArray[0].schema)) {
+              // console.log('Only one child with further children or schema, proceeding to child node.');
+              node = childrenArray[0];
 
-                if (node.children) {
-                  // Handle nodes with children
-                  const refinedText = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, node.description);
-                  let options = node.children.map(grandchild => ({
-                    title: grandchild.name,
-                    id: grandchild.name.replace(/ /g, '_')
-                  }));
-                  result['followup'] = {
-                    text: refinedText,
-                    followup_type: 'selection',
-                    options: options,
-                  };
-                  result['intent'] = node.name;
-                  interactionData.aiResponse = refinedText;
-                  const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-                  return result;
-                } else if (node.schema) {
-                  // Handle nodes with a schema
-                  const options = node.schema._def.values.map(option => ({
-                    title: option,
-                    id: option.replace(/ /g, '_')
-                  }));
-                  result['followup'] = {
-                    text: node.description,
-                    followup_type: 'selection',
-                    options: options,
-                  };
-                  result['intent'] = node.name;
-                  interactionData.aiResponse = node.description;
-                  const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-                  return result;
-                }
-              } else {
-                // Multiple children, list them as options
+              if (node.children) {
+                // Handle nodes with children
                 const refinedText = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, node.description);
-                let options = childrenArray.map(child => ({
-                  title: child.name,
-                  id: child.name.replace(/ /g, '_')
-                }));
+                let options = await Promise.all(node.children.map(async (grandchild) => ({
+                  title: await this.dynamicFlowService.translateOption(this.formatTitle(grandchild.name), lang),
+                  id: grandchild.name.replace(/ /g, '_')
+                })));
                 result['followup'] = {
                   text: refinedText,
                   followup_type: 'selection',
@@ -280,13 +402,183 @@ export class FlowAiService {
                 interactionData.aiResponse = refinedText;
                 const savedInteraction = await createInteraction(this.interactionModel, interactionData);
                 return result;
+              } else if (node.schema) {
+                // Handle nodes with a schema
+                const options = await Promise.all(node.schema._def.values.map(async (option) => ({
+                  title: await this.dynamicFlowService.translateOption(this.formatTitle(option), lang),
+                  id: option.replace(/ /g, '_')
+                })));
+                result['followup'] = {
+                  text: node.description,
+                  followup_type: 'selection',
+                  options: options,
+                };
+                result['intent'] = node.name;
+                interactionData.aiResponse = node.description;
+                const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+                return result;
+              }
+            } else {
+              // Multiple children, list them as options
+              const refinedText = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, node.description);
+              let options = await Promise.all(childrenArray.map(async (child) => ({
+                title: await this.dynamicFlowService.translateOption(this.formatTitle(child.name), lang),
+                id: child.name.replace(/ /g, '_')
+              })));
+              result['followup'] = {
+                text: refinedText,
+                followup_type: 'selection',
+                options: options,
+              };
+              result['intent'] = node.name;
+              interactionData.aiResponse = refinedText;
+              const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+              return result;
+            }
+          } else if (node.schema) {
+            // Handle node with schema directly
+            const options = await Promise.all(node.schema._def.values.map(async (option) => ({
+              title: await this.dynamicFlowService.translateOption(this.formatTitle(option), lang),
+              id: option.replace(/ /g, '_')
+            })));
+            result['followup'] = {
+              text: node.description,
+              followup_type: 'selection',
+              options: options,
+            };
+            result['intent'] = node.name;
+            interactionData.aiResponse = node.description;
+            const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+            return result;
+          } else {
+            // Leaf node
+            const refinedText = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, node.description);
+            result['followup'] = {
+              text: refinedText,
+              followup_type: node.type,
+              options: [],
+            };
+            result['intent'] = node.name;
+            interactionData.aiResponse = refinedText;
+            const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+            return result;
+          }
+        } else {
+          // Default behavior: present initial options
+          if (node.children || node.child) {
+            const nodeDescription = node.description;
+            const greetingMessage = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, nodeDescription);
+
+            // Create an array that contains either the children or wraps the child node into an array
+            const childrenArray = node.children || [node.child];
+
+            // This assumes that the structure or ordering of children is consistent
+            // where the first child is always the 'service_type' node or equivalent
+            const serviceTypeNode = childrenArray[0];
+
+            if (serviceTypeNode) {
+              let options = [];
+              if (serviceTypeNode.schema && serviceTypeNode.schema._def && serviceTypeNode.schema._def.values) {
+                options = serviceTypeNode.schema._def.values; // Extract enum values
+              } else {
+                console.error('Schema values not found. Ensure the schema is correctly defined.');
+              }
+              result['followup'] = {
+                text: nodeDescription,  // Using the node description from above for consistency
+                followup_type: 'selection',
+                options: await Promise.all(options.map(async (option) => ({
+                  title: await this.dynamicFlowService.translateOption(this.formatTitle(option), lang),
+                  id: option.replace(/ /g, '_'),
+                }))),
+              };
+              result['intent'] = serviceTypeNode.name;
+              interactionData.aiResponse = nodeDescription;
+              const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+              return result;
+            } else {
+              console.error('Service type node not found among children.');
+              // Handle the case where the expected service type node is not found
+              return {
+                error: "Service type node not found. Check the node configuration."
+              };
+            }
+          } else {
+            // Handle error or unexpected node structure
+            return {
+              error: 'Expected node no children found'
+            };
+          }
+        }
+      }
+
+      if (node.type === 'selection') {
+        const userInput = lastUserInput.toLowerCase(); // converting user input to lower case
+        const selectionMatch = node.children.find(child => child.name.toLowerCase() === userInput); // matching user input with the options/selections
+        if (selectionMatch) {
+          // Direct handling of the selection response
+          let name = selectionMatch.name; // Ensure `name` is declared
+          node = selectionMatch;
+          console.log('hereee')
+          if (node.children || (node.child && !node.schema)) {
+            try {
+              // Use the processChildren function to handle child nodes
+              const { refinedText, options } = await this.processChildren(node, userInput, flow_start, this.interactionModel, lang);
+              result['followup'] = {
+                text: refinedText,
+                followup_type: 'selection',
+                options: options,
+              };
+              result['intent'] = node.name;
+              interactionData.aiResponse = refinedText;
+              const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+              return result;
+            } catch (error) {
+              console.error("Error processing children: ", error);
+              // Handle errors here
+            }
+          } else {
+            // Handle the fallback where the node has no children or schema
+            const refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []);
+            result['followup'] = {
+              text: refinedText,
+              followup_type: node.type,
+              options: []
+            };
+            result['intent'] = node.name;
+            interactionData.aiResponse = refinedText;
+            const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+            return result;
+          }
+        } else { // handling when user input is string format rather than selection options being chosen.
+          let flowStartNode: FlowTree;
+          flowStartNode = this.findByName(this.flowTree, flow_start);
+          // Handling when user input doesn't directly match any children's names
+          let mostRelevantNode = await this.relevanceCheckService.findMostRelevantNode(lastUserInput, allNodes, flow_start);
+          node = mostRelevantNode; // Update current node to the most relevant one
+          if (node) {
+            if (node.children || (node.child && !node.schema)) {
+              try {
+                // Reuse processChildren to handle the node and its children
+                const { refinedText, options } = await this.processChildren(node, lastUserInput, flow_start, this.interactionModel,lang);
+                result['followup'] = {
+                  text: refinedText,
+                  followup_type: 'selection',
+                  options: options,
+                };
+                result['intent'] = node.name;
+                interactionData.aiResponse = refinedText;
+                const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+                return result;
+              } catch (error) {
+                console.error("Error processing children: ", error);
+                // Handle errors here
               }
             } else if (node.schema) {
               // Handle node with schema directly
-              const options = node.schema._def.values.map(option => ({
-                title: option,
+              const options = await Promise.all(node.schema._def.values.map(async (option) => ({
+                title: await this.dynamicFlowService.translateOption(this.formatTitle(option), lang),
                 id: option.replace(/ /g, '_')
-              }));
+              })));
               result['followup'] = {
                 text: node.description,
                 followup_type: 'selection',
@@ -297,12 +589,11 @@ export class FlowAiService {
               const savedInteraction = await createInteraction(this.interactionModel, interactionData);
               return result;
             } else {
-              // Leaf node
-              const refinedText = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, node.description);
+              // Leaf node handling
+              const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, []);
               result['followup'] = {
                 text: refinedText,
                 followup_type: node.type,
-                options: [],
               };
               result['intent'] = node.name;
               interactionData.aiResponse = refinedText;
@@ -310,422 +601,219 @@ export class FlowAiService {
               return result;
             }
           } else {
-            // Default behavior: present initial options
-            if (node.children || node.child) {
-              const nodeDescription = node.description;
-              const greetingMessage = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, nodeDescription);
-
-              // Create an array that contains either the children or wraps the child node into an array
-              const childrenArray = node.children || [node.child];
-
-              // This assumes that the structure or ordering of children is consistent
-              // where the first child is always the 'service_type' node or equivalent
-              const serviceTypeNode = childrenArray[0];
-
-              if (serviceTypeNode) {
-                let options = [];
-                if (serviceTypeNode.schema && serviceTypeNode.schema._def && serviceTypeNode.schema._def.values) {
-                  options = serviceTypeNode.schema._def.values; // Extract enum values
-                } else {
-                  console.error('Schema values not found. Ensure the schema is correctly defined.');
-                }
-                result['followup'] = {
-                  text: nodeDescription,  // Using the node description from above for consistency
-                  followup_type: 'selection',
-                  options: options.map(option => ({
-                    title: option,
-                    id: option.replace(/ /g, '_'),
-                  })),
-                };
-                result['intent'] = serviceTypeNode.name;
-                interactionData.aiResponse = nodeDescription;
-                const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-                return result;
-              } else {
-                console.error('Service type node not found among children.');
-                // Handle the case where the expected service type node is not found
-                return {
-                  error: "Service type node not found. Check the node configuration."
-                };
-              }
-            } else {
-              // Handle error or unexpected node structure
-              return {
-                error: 'Expected node no children found'
+            node = flowStartNode;
+            const answer = await this.faqService.ragChain(lastUserInput, treeId);
+            if (answer !== "I'm sorry, but I cannot answer questions that are not relevant to the provided context.") {
+              interactionData.aiResponse = answer;
+              const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+              result['followup'] = {
+                text: answer,
+                followup_type: 'text', // Assuming node.type is the current node type
               };
-            }
-          }
-        }
-
-
-        if (node.type === 'selection') // schecking if node is selection
-        {
-          const userInput = lastUserInput.toLowerCase(); // converting userinput to lower case
-          const selectionMatch = node.children.find(child => child.name.toLowerCase() === userInput); // matching userinput with the options/selections
-          if (selectionMatch) // if they are a match
-          {
-            // Handle the selection response directly
-            name = selectionMatch.name;
-            node = selectionMatch;
-
-            if (node.children || (node.child && !node.schema)) // if the matched node has children or child with no schema itself
-            {
-              const childrenArray = node.children || [node.child]; // ensuring that whether it has a child or children, treat it as an array
-              // console.log('111')
-              if (childrenArray.length === 1 && childrenArray[0].children) // If there is only one child and it has further children, skip to displaying its children
-              {
-                node = childrenArray[0]; // Switching context to the single child allowing to display grand child
-                const refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []); // fetching new description for new node context
-                // mapping onto options basically ( YES NO )
-                let options = node.children.map(grandchild => ({
-                  title: grandchild.name,
-                  id: grandchild.name.replace(/ /g, '_')
-                }));
-                result['followup'] = {
-                  text: refinedText,
-                  followup_type: 'selection',
-                  options: options,  // Displaying grandchildren as options directly
-                };
-                result['intent'] = node.name;  // Update to the child's name
-                interactionData.aiResponse = refinedText;
-                const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-                return result;
-              }
-
-              else // If there are multiple children, list them as options, remaining logic same as before
-              {
-                // console.log('222')
-                const refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []); // Obtain refined text
-
-                let options = childrenArray.map(child => ({
-                  title: child.name,
-                  id: child.name.replace(/ /g, '_')
-                }));
-
-                result['followup'] = {
-                  text: refinedText,
-                  followup_type: 'selection',
-                  options: options,
-                };
-                result['intent'] = node.name;
-                interactionData.aiResponse = refinedText;
-                const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-                return result;
-              }
-            }
-            // console.log('333')
-            // fallback block where above checks of child grandchild fail, for the last node in a specific path
-            const refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []); //
-            result['followup'] = {
-              text: refinedText,
-              followup_type: node.type,
-              options: []
-            };
-            result['intent'] = node.name;
-            interactionData.aiResponse = refinedText;
-            const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-            return result;
-
-          }
-          else // this condtion is triggered when the user does not enter a completely similar response, originally selections are shown but if enters text instead of selection
-          {
-            let mostRelevantNode = await this.relevanceCheckService.findMostRelevantNode(lastUserInput, allNodes, flow_start);// checking relevent node to user input
-            // console.log('MostRelevantNode:', JSON.stringify(mostRelevantNode, null, 2));
-            // console.log('444')
-            node = mostRelevantNode; // assigning value to current node
-
-            if (node) // if node exists
-            {
-              if (node.children || (node.child && !node.schema)) // if node has child or children and no schema
-              {
-                const childrenArray = node.children || [node.child]; // ensuring that whether child or children treat as array
-                // console.log('555')
-                if (childrenArray.length === 1 && (childrenArray[0].children || childrenArray[0].schema)) // checking if only child, that child has children and schema
-                {
-                  node = childrenArray[0]; // update node to this child, moving deeper into tree
-                  if (node.children) // checking if this node has children
-                  {
-                    // Handle children
-                    const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, []);
-
-                    //creating array for options
-                    let options = node.children.map(grandchild => ({
-                      title: grandchild.name,
-                      id: grandchild.name.replace(/ /g, '_')
-                    }));
-                    result['followup'] = {
-                      text: refinedText,
-                      followup_type: 'selection',
-                      options: options,
-                    };
-                    result['intent'] = node.name;
-                    interactionData.aiResponse = refinedText;
-                    const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-                    return result;
-
-                  } else if (node.schema) // if node doesnt have children but schema ( for decision point like Yes or No)
-                  {
-                    // console.log('666')
-                    // Handle schema-based options
-                    const options = node.schema._def.values.map(option => ({
-                      title: option,
-                      id: option.replace(/ /g, '_')
-                    }));
-                    result['followup'] = {
-                      text: node.description,
-                      followup_type: 'selection',
-                      options: options,
-                    };
-                    result['intent'] = node.name;
-                    interactionData.aiResponse = node.description;
-                    const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-                    return result;
-                  }
-                } else // Multiple children, list them as options
-                {
-                  // console.log('777')
-                  let optionTitles = childrenArray.map(child => child.name);
-                  // Attempt to match the last user input to one of the child node options
-                  const bestMatchedOption = await this.dynamicFlowService.handleOption(lastUserInput, node.description, optionTitles);
-
-                  if (bestMatchedOption) {
-                    const selectedChild = childrenArray.find(child => child.name === bestMatchedOption);
-                    if (selectedChild) {
-                      const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, selectedChild.description, flow_start, []);
-                      let options = selectedChild.children ? selectedChild.children.map(c => ({
-                        title: c.name,
-                        id: c.name.replace(/ /g, '_')
-                      })) : [];
-
-                      result['followup'] = {
-                        text: refinedText,
-                        followup_type: selectedChild.children ? 'selection' : 'message',
-                        options: options
-                      };
-                      result['intent'] = selectedChild.name;
-                      interactionData.aiResponse = refinedText;
-                      const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-                      return result;
-                    }
-                  }
-
-                  // If no valid option is matched or bestMatchedOption is null
-                  const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, []);
-                  result['followup'] = {
-                    text: refinedText || "I couldn't find a matching option. Could you please specify your question from the following?",
-                    followup_type: 'selection',
-                    options: childrenArray.map(child => ({
-                      title: child.name,
-                      id: child.name.replace(/ /g, '_')
-                    }))
-                  };
-                  result['intent'] = node.name;
-                  interactionData.aiResponse = refinedText;
-                  const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-                  return result;
-                }
-              }
-              else if (node.schema) // Handle node with schema directly
-              {
-                // console.log('888')
-                const options = node.schema._def.values.map(option => ({
-                  title: option,
-                  id: option.replace(/ /g, '_')
-                }));
-                result['followup'] = {
-                  text: node.description,
-                  followup_type: 'selection',
-                  options: options,
-                };
-                result['intent'] = node.name;
-                interactionData.aiResponse = node.description;
-                const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-                return result;
-
-              } else // leaf node
-              {
-                // console.log('999')
-                const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, []);
-                result['followup'] = {
-                  text: refinedText,
-                  followup_type: node.type,
-                };
-                result['intent'] = node.name;
-                interactionData.aiResponse = node.description;
-                const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-                return result;
-              }
+              result['intent'] = node.name; // Keep user at the same node
+              return result;
             }
             else {
-
-              // No relevant node found, give a generic response or re-prompt
-              result['followup'] = {
-                text: "I donot posses information to your query. Please try again !!!",
-                followup_type: 'error',
-                options: []
-              };
-              // result['intent'] = node.name; // Keep the current intent, or you might want to route them to a help or main menu node
-              interactionData.aiResponse = "I donot posses information to your query. Please try again !!!";
+              interactionData.aiResponse = "I'm sorry, but I cannot answer questions that are not relevant to the provided context.";
               const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+              // No relevant node found
+              result['followup'] = {
+                text: "I'm sorry, but I cannot answer questions that are not relevant to the provided context.",
+                followup_type: node.type, // Assuming node.type is the current node type
+                options: await Promise.all(node.children ? node.children.map(async (child) => ({
+                  title: await this.dynamicFlowService.translateOption(this.formatTitle(child.name), lang),
+                  id: child.name,
+                })) : [] // Provide current options if available
+              )};
+              result['intent'] = node.name; // Keep user at the same node
               return result;
             }
           }
         }
+      }
 
-        const mostRelevantNode = await this.relevanceCheckService.findMostRelevantNode(lastUserInput, allNodes, flow_start);
-        if (mostRelevantNode && node.type !== 'intermediate' && mostRelevantNode.type !== 'selection') {
-          // console.log('not intermediate or selection');
-          // Redirect to the most relevant node
+      const mostRelevantNode = await this.relevanceCheckService.findMostRelevantNode(lastUserInput, allNodes, flow_start);
+      if (mostRelevantNode && node.type !== 'intermediate' && mostRelevantNode.type !== 'selection') {
+        // console.log('not intermediate or selection');
+        // Redirect to the most relevant node
+        name = mostRelevantNode.name;
+        node = mostRelevantNode;
+        followup_value = ''; // Reset followup_value
+        path.push({
+          intent: name,
+          value: lastUserInput,
+        });
+
+        const options = node.children && node.children.length > 0 ? node.children.map(child => child.name) : [];
+        const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, options);
+
+        // Return the result for the current node
+        result['followup'] = {
+          text: refinedText,
+          followup_type: node.type,
+          options: await Promise.all(node.children ? node.children.map(async (child) => ({
+            title: await this.dynamicFlowService.translateOption(this.formatTitle(child.name), lang),
+            id: child.name,
+          })) : [] // Provide current options if available
+        )};
+
+        result['intent'] = node.name; // Set intent to the final node
+        interactionData.aiResponse = refinedText;
+        const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+        return result;
+      }
+      else if (mostRelevantNode && node.type === 'intermediate') {
+        console.log('intermediate');
+        // Check if the node has children or if it is a selection type with a schema
+
+        if (node.child) {
+          console.log('Moving to child node');
+          // Move to the child node
+          name = node.child.name;
+          node = node.child;
+        }
+        else if (node.children) {
+          console.log('hereasas')
+          // Move to the child node
+          name = mostRelevantNode.child.name;
+          node = mostRelevantNode.child;
+        }
+        else if (node.schema) {
+          console.log('here');
+          // Handle schema options (for selection-type nodes)
+          const options = await Promise.all(node.schema._def.values.map(async (option) => ({
+            title: await this.dynamicFlowService.translateOption(this.formatTitle(option), lang),
+            id: option.replace(/ /g, '_')
+          })));
+          result['followup'] = {
+            text: node.description,
+            followup_type: 'selection',
+            options: options,
+          };
+          return result;
+        } else {
+          console.log('no childern or child')
           name = mostRelevantNode.name;
           node = mostRelevantNode;
-          followup_value = ''; // Reset followup_value
+        }
+        // Continue with existing logic for setting the followup response
+        path.push({
+          intent: name,
+          value: node.description,
+        });
+        // Handle final node (text type)
+        const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start);
+        result['followup'] = {
+          text: refinedText,
+          followup_type: node.type,
+          options: await Promise.all(node.children ? node.children.map(async (child) => ({
+            title: await this.dynamicFlowService.translateOption(this.formatTitle(child.name), lang),
+            id: child.name,
+          })) : []
+       ) };
+
+        result['intent'] = node.name;
+        interactionData.aiResponse = refinedText;
+        const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+        return result;
+      }
+      else if (mostRelevantNode && mostRelevantNode.type === 'selection') {
+        // console.log('Handling selection node:', mostRelevantNode.name);
+
+        name = mostRelevantNode.name;  // Set the current node to the child
+        node = mostRelevantNode;  // Set the current node to the child
+
+        // console.log('Node children:', node.children);
+        if (node.type === 'selection' && node.children && node.children.length > 0) {
+          // console.log("Handling selection node:", node.children);
+        } else {
+          console.log("Node children are missing or type is incorrect");
+        }
+
+        if (!path.some(p => p.intent === name)) {
           path.push({
             intent: name,
-            value: lastUserInput,
+            value: node.description, // Use the last user input or node description
           });
+        }
 
-          const options = node.children && node.children.length > 0 ? node.children.map(child => child.name) : [];
-          const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, options);
+        const options = node.children && node.children.length > 0 ? node.children.map(child => child.name) : [];
+        const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, options);
 
-          // Return the result for the current node
+        if (node.children && node.children.length > 0) {
+          interactionData.aiResponse = refinedText;
+          const savedInteraction = await createInteraction(this.interactionModel, interactionData);
           result['followup'] = {
             text: refinedText,
             followup_type: node.type,
-            options: node.children ? node.children.map(child => ({
-              title: child.name,
+            options: await Promise.all(node.children.map(async (child) => ({
+              title: await this.dynamicFlowService.translateOption(this.formatTitle(child.name), lang),
               id: child.name,
-            })) : [] // Provide current options if available
-          };
-
-          result['intent'] = node.name; // Set intent to the final node
-          interactionData.aiResponse = refinedText;
-          const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-          return result;
-        }
-        else if (mostRelevantNode && node.type === 'intermediate') {
-          // console.log('intermediate')
-          // Handle intermediate node
-          if (node.children) {
-            name = mostRelevantNode.child.name;  // Move to the child node
-            node = mostRelevantNode.child;  // Set the current node to the child
-          } else {
-            name = mostRelevantNode.name;  // Set the current node to the child
-            node = mostRelevantNode;  // Set the current node to the child
-          }
-          path.push({
-            intent: name,
-            value: node.description,
-          });
-
-          const options = node.children && node.children.length > 0 ? node.children.map(child => child.name) : [];
-          const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, options,);
-
-          // Return the result for the current node
+            }))
+          )};
+        } else {
           result['followup'] = {
-            text: refinedText,
+            text: node.description,
             followup_type: node.type,
-            options: node.children ? node.children.map(child => ({
-              title: child.name,
-              id: child.name,
-            })) : [] // Provide current options if available
+            options: [] // No children available
           };
-
-          result['intent'] = node.name; // Set intent to the final node
-          interactionData.aiResponse = refinedText;
+          interactionData.aiResponse = node.description;
           const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-          return result;
-
         }
-        else if (mostRelevantNode && mostRelevantNode.type === 'selection') {
-          // console.log('Handling selection node:', mostRelevantNode.name);
 
-          name = mostRelevantNode.name;  // Set the current node to the child
-          node = mostRelevantNode;  // Set the current node to the child
+        result['intent'] = node.name; // Set the intent to the current node
+        return result;
+      }
+      else if (mostRelevantNode === null) {
 
-          // console.log('Node children:', node.children);
-          if (node.type === 'selection' && node.children && node.children.length > 0) {
-            console.log("Handling selection node:", node.children);
-          } else {
-            console.log("Node children are missing or type is incorrect");
-          }
-
-
-          if (!path.some(p => p.intent === name)) {
-            path.push({
-              intent: name,
-              value: node.description, // Use the last user input or node description
-            });
-          }
-
-          const options = node.children && node.children.length > 0 ? node.children.map(child => child.name) : [];
-          const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, options);
-
-          if (node.children && node.children.length > 0) {
-            interactionData.aiResponse = refinedText;
-            const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-            result['followup'] = {
-              text: refinedText,
-              followup_type: node.type,
-              options: node.children.map(child => ({
-                title: child.name,
-                id: child.name,
-              }))
-            };
-          } else {
-            result['followup'] = {
-              text: node.description,
-              followup_type: node.type,
-              options: [] // No children available
-            };
-            interactionData.aiResponse = node.description;
-            const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-          }
-
-          result['intent'] = node.name; // Set the intent to the current node
-          return result;
-
-        }
-        else if (mostRelevantNode === null) {
-          console.log('Null ')
-          const endNodeCheck = await this.dynamicFlowService.logicalEnd(query, allNodes, flow_start);
-          const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start);
-          if (endNodeCheck !== 'Null') {
-          }
-          
+        if (endNodeCheck !== 'Null') {
           interactionData.aiResponse = endNodeCheck;
-
           const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-          // No relevant node found
+          return {
+            complete: true,
+            text: endNodeCheck
+          };
+        }
+
+        const answer = await this.faqService.ragChain(lastUserInput, treeId);
+        if (answer !== "I'm sorry, but I cannot answer questions that are not relevant to the provided context.") {
+          interactionData.aiResponse = answer;
+          const savedInteraction = await createInteraction(this.interactionModel, interactionData);
+
           result['followup'] = {
-            text: endNodeCheck,
-            followup_type: node.type, // Assuming node.type is the current node type
-            options: node.children ? node.children.map(child => ({
-              title: child.name,
-              id: child.name,
-            })) : [] // Provide current options if available
+            text: answer,
+            followup_type: 'text', // Assuming node.type is the current node type
           };
           result['intent'] = node.name; // Keep user at the same node
           return result;
         }
         else {
-          interactionData.aiResponse = endNodeCheck;
+          interactionData.aiResponse = "I'm sorry, but I cannot answer questions that are not relevant to the provided context.";
           const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-          return {
-            complete: true,
-            message: endNodeCheck // Assuming this contains the final message to the user
-          };
+          // No relevant node found
+          result['followup'] = {
+            text: "I'm sorry, but I cannot answer questions that are not relevant to the provided context.",
+            followup_type: node.type, // Assuming node.type is the current node type
+            options: await Promise.all(node.children ? node.children.map(async (child) => ({
+              title: await this.dynamicFlowService.translateOption(this.formatTitle(child.name), lang),
+              id: child.name,
+            })) : [] // Provide current options if available
+          )};
+          result['intent'] = node.name; // Keep user at the same node
+          return result;
         }
       }
-      else {
-        interactionData.aiResponse = endNodeCheck;
-        const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-        return {
-          complete: true,
-          message: endNodeCheck // Assuming this contains the final message to the user
-        };
-
-      }
     }
+  }
+
+  formatTitle(title) {
+    // Replace underscores with spaces
+    let result = title.replace(/_/g, ' ');
+    // Capitalize the first letter of each word
+    result = result.replace(/\b\w/g, function (char) {
+      return char.toUpperCase();
+    });
+    return result.trim();
   }
 
   private findByName(node: FlowTree, name: string): FlowTree | undefined {
@@ -745,5 +833,33 @@ export class FlowAiService {
       return this.findByName(node.child, name);
     }
     return undefined;
+  }
+
+  async processChildren(node, userInput, flow_start, interactionModel,lang) {
+    const childrenArray = node.children || [node.child];
+    if (childrenArray.length === 1 && childrenArray[0].children) {
+      return await this.handleSingleChild(childrenArray[0], userInput, flow_start, interactionModel,lang)
+    }
+    else {
+      return await this.handleMultipleChildren(node, childrenArray, userInput, flow_start, interactionModel,lang)
+    }
+  }
+
+  async handleSingleChild(node, userInput, flow_start, interactionModel, lang) {
+    const refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []); // fetching new description for new node context
+    let options = await Promise.all(node.children.map(async (grandchild) => ({
+      title: await this.dynamicFlowService.translateOption (this.formatTitle(grandchild.name), lang),
+      id: grandchild.name.replace(/ /g, '_')
+    })));
+    return { refinedText, options }
+  }
+
+  async handleMultipleChildren(node, childrenArray, userInput, flow_start, interactionModel, lang) {
+    const refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []); // fetching new description for new node context
+    let options = await Promise.all(childrenArray.map(async(child) => ({
+      title: await this.dynamicFlowService.translateOption (this.formatTitle(child.name), lang),
+      id: child.name.replace(/ /g, '_')
+    })));
+    return { refinedText, options }
   }
 }

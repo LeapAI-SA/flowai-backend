@@ -4,7 +4,7 @@ import { Document } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class FlowTreeDocument extends Document {
-  @Prop({ required: true })
+  @Prop({})
   description: string; // Description of the flow tree
 
   @Prop({ required: true }) // Ensure `userId` is unique
@@ -13,7 +13,7 @@ export class FlowTreeDocument extends Document {
   @Prop({ required: true, unique: true }) // Ensure `treeId` is unique
   treeId: string;
 
-  @Prop({ required: true, type: Object })
+  @Prop({ type: Object })
   flowTree: any; // Store the flow tree as a generic object
 
 }

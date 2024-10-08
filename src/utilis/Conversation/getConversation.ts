@@ -11,12 +11,11 @@ export async function getConversation(
       // Find the conversation by userId and conversationId
       const conversation = await conversationModel
         .find({ userId, conversationId })
-        .select('description refinedDescription aiResponse')
+        .select(' conversationStage description refinedDescription aiResponse')
         .sort({ createdAt: 1 })
         .exec();
   
       if (!conversation || conversation.length === 0) {
-        console.log('No existing conversation found for user:', userId, 'and conversation ID:', conversationId);
         return null;
       }
   

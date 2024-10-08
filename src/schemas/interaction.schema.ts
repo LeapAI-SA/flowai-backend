@@ -11,7 +11,7 @@ export class Interaction extends Document { // inherit methods from Document for
   @Prop({ required: true }) // ALWAYS REQUIRED
   userId: string; // string format
 
-  @Prop({ required: true }) // ALWAYS REQUIRED
+  @Prop({ }) 
   query: string; // string format
 
   @Prop()

@@ -87,9 +87,8 @@ FlowTree:  {
     }
 };
 `
-
 export const example2 = `
-Description: "This section is for an informAtive chatbot for a software based company providing services.
+Description: "This section is for an informative chatbot for a software based company providing services.
 FlowTree:  {
     name: "initial_greeting",
     type: IntentType.TEXT,
@@ -242,6 +241,78 @@ FlowTree: {
                         description: "Resume Ranker integrates with Llama 3 to provide technical recruiters access to scored resumes."
                     }
                 ]
+            }
+        ]
+    }
+};
+`
+export const example4 = `
+Description: "This section is for an informative chatbot for a Mechanic Shop with types of services provided.
+FlowTree:{
+    name: "initial_greeting",
+    type: IntentType.TEXT,
+    description: "Welcome to our Mechanic Shop! We offer Car Repair, Bike Repair, and Home Visitation services. How can we assist you today?",
+    child: {
+        name: "service_type",
+        type: IntentType.SELECTION,
+        description: "Please select the type of service you are interested in.",
+        schema: z.enum(['Car Repair', 'Bike Repair', 'Home Visitation']),
+        children: [
+            {
+                name: "Car Repair",
+                type: IntentType.INTERMEDIATE,
+                description: "Information about our Car Repair services.",
+                child: {
+                    name: "car_repair_services",
+                    type: IntentType.SELECTION,
+                    description: "Please select the specific Car Repair service you need.",
+                    schema: z.enum(['Denting Service', 'Oil Change', 'Lights Modification']),
+                    children: [
+                        {
+                            name: "Denting Service",
+                            type: IntentType.TEXT,
+                            description: "Our Denting Service includes repairing vehicle damages by removing dents and painting the vehicle. Thank you for choosing us, and help will be provided soon."
+                        },
+                        {
+                            name: "Oil Change",
+                            type: IntentType.TEXT,
+                            description: "Our Oil Change service involves replacing the engine oil and rehauling the car. Thank you for choosing us, and help will be provided soon."
+                        },
+                        {
+                            name: "Lights Modification",
+                            type: IntentType.TEXT,
+                            description: "Our Lights Modification service will enhance your vehicle's lighting system. Thank you for choosing us, and help will be provided soon."
+                        }
+                    ]
+                }
+            },
+            {
+                name: "Bike Repair",
+                type: IntentType.INTERMEDIATE,
+                description: "Information about our Bike Repair services.",
+                child: {
+                    name: "bike_repair_services",
+                    type: IntentType.SELECTION,
+                    description: "Please select the specific Bike Repair service you need.",
+                    schema: z.enum(['Tyre Replacement', 'Body Replacement']),
+                    children: [
+                        {
+                            name: "Tyre Replacement",
+                            type: IntentType.TEXT,
+                            description: "Our Tyre Replacement service involves replacing existing tyres with brand new ones. Thank you for choosing us, and help will be provided soon."
+                        },
+                        {
+                            name: "Body Replacement",
+                            type: IntentType.TEXT,
+                            description: "Our Body Replacement service gives your bike a brand new look by changing its body. Thank you for choosing us, and help will be provided soon."
+                        }
+                    ]
+                }
+            },
+            {
+                name: "Home Visitation",
+                type: IntentType.TEXT,
+                description: "Our Home Visitation service involves our team visiting your vehicle at home, inspecting it, and providing services based on its condition. Thank you for choosing us, and help will be provided soon."
             }
         ]
     }
