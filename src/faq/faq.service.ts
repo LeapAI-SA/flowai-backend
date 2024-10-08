@@ -4,10 +4,6 @@ import { OpenAI } from 'openai';
 import { QdrantClient } from '@qdrant/js-client-rest';
 import { QdrantVectorStore } from '@langchain/qdrant';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
-import { HumanMessage } from 'langchain/schema';
-import * as fs from 'fs';
-import * as pdfParse from 'pdf-parse';
-// import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { PDFExtract } from 'pdf.js-extract';
 
 const pdfExtract = new PDFExtract();
@@ -42,7 +38,6 @@ export class FaqService {
         },
       });
     } else {
-      console.log(`Collection '${this.collectionName}' already exists.`);
     }
   }
 
@@ -50,11 +45,9 @@ export class FaqService {
     return new Promise((resolve, reject) => {
       pdfExtract.extract(pdfPath, options, (err, data) => {
         if (err) {
-          console.error('Error extracting PDF:', err);
           reject(err);
           return;
         }
-  
         let fullText = '';
         let prevY = null; // Keep track of the previous item's y-coordinate
   
@@ -94,13 +87,14 @@ export class FaqService {
     return await textSplitter.splitText(text);
   }
 
-  async addChunksToVectorStore(chunks: string[], treeId: string,) {
+  async addChunksToVectorStore(chunks: string[], treeId: string, userId:string ) {
     const embeddings = new OpenAIEmbeddings({
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: 'text-embedding-3-large',
     });
     const metadata = chunks.map(() => ({
       tree_id: treeId,
+      user_id: userId,
     }));
 
     await QdrantVectorStore.fromTexts(
@@ -115,7 +109,7 @@ export class FaqService {
     );
   }
 
-  async checkRelevance(question: string, context: string): Promise<number> {
+  async checkRelevance(question: string, context: string, retries: number = 2, delay: number = 5000): Promise<number> {
     const prompt = `Context: "${context}"
                     Question: "${question}"
                     Assign a relevance score in the range 0-1 where 1 means completely relevant and 0 means not relevant. 
@@ -128,25 +122,29 @@ export class FaqService {
         model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
       });
-  
+
       const aiResponse =  response.choices[0].message.content.trim();
-  
       const aiResponseCleaned = aiResponse
+
         .replace(/```json\n?/g, '')
         .replace(/\n?```/g, '')
         .trim();
-  
       const parsedResponse = JSON.parse(aiResponseCleaned);
 
       if (!('score' in parsedResponse)) {
         throw new Error("Score is missing from the AI response.");
       }
-  
+
       return parsedResponse.score;
     } catch (error) {
-      console.error('Error processing AI response:', error);
-      throw error;
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await this.checkRelevance(question, context,retries - 1, delay);
     }
+    else{
+      throw new Error(`Original error: ${error.message}`);
+    }
+  }
   }
 
   async getContext(question: string, treeId: string): Promise<{ question: string; context: string }> {
@@ -185,7 +183,7 @@ export class FaqService {
     return score > 0.7;
   }
 
-  async generateAnswer(question: string, context: string): Promise<string> {
+  async generateAnswer(question: string, context: string, retries: number = 2, delay: number = 5000): Promise<string> {
     const prompt = `Question: ${question}
   Context: ${context}
   
@@ -201,9 +199,14 @@ export class FaqService {
       const answer =  response.choices[0].message.content.trim();
       return answer.trim();
     } catch (error) {
-      console.error('Error generating answer:', error);
-      throw error;
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await this.generateAnswer(question, context,retries - 1, delay);
     }
+    else{
+      throw new Error(`Original error: ${error.message}`);
+    }
+  }
   }
   
   async ragChain(question: string, treeId: string): Promise<string> {
@@ -217,11 +220,11 @@ export class FaqService {
     }
   }
 
-  async processPDFandAddToCollection(pdfPath: string, treeId: string) {
+  async processPDFandAddToCollection(pdfPath: string, treeId: string, userId: string) {
     await this.initializeCollection();
 
     const text = await this.extractTextFromPDF(pdfPath);
     const chunks = await this.chunkText(text);
-    await this.addChunksToVectorStore(chunks, treeId);
+    await this.addChunksToVectorStore(chunks, treeId, userId);
   }
 }

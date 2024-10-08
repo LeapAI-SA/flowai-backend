@@ -9,6 +9,7 @@ import { initialGreetingPrompt } from '../assets/prompts/initalGreeting-prompt';
 import { logicalEndPrompt } from '../assets/prompts/logicalEnd-prompt';
 import { refineTextPrompt } from '../assets/prompts/refineText-prompt';
 import { handleOptionPrompt } from '../assets/prompts/handleOption-prompt';
+import { confirmEndOrContinuePrompt } from '../assets/prompts/confirmUserExit-prompt';
 // import { checkInfoPrompt } from '../assets/prompts/checkInfo-prompt';
 
 @Injectable()
@@ -49,13 +50,13 @@ export class DynamicFlowService {
   }
 
 
-  async analyzeInput(description: string, messages: { role: string, content: string }[]): Promise<{ message: string, followUpPrompts: string[] }> {
+  async analyzeInput(description: string, messages: { role: string, content: string }[], fileUploaded: boolean, retries: number = 2, delay: number = 5000): Promise<{ message: string, followUpPrompts: string[], fileUploaded: boolean }> {
     let conversationHistory = messages.map(msg => `${msg.role === 'user' ? 'User:' : 'System:'} ${msg.content}`).join('\n');
     messages.push({
       role: 'user',
       content: description
     });
-    const prompt = analyzeInputPrompt(description, conversationHistory);
+    const prompt = analyzeInputPrompt(description, conversationHistory,fileUploaded );
     try {
       const response = await this.aiModel.chat.completions.create({
         model: "gpt-4o",
@@ -78,15 +79,57 @@ export class DynamicFlowService {
 
       const followUpPrompts = [message];
 
-      return { message, followUpPrompts };
+      return { message, followUpPrompts, fileUploaded };
     } catch (error) {
-      console.error('Error analyzing user input:', error);
-      throw new Error('Failed to analyze user input');
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await this.analyzeInput(description, messages, fileUploaded, retries - 1, delay);
     }
+    else{
+      throw new Error(`Original error: ${error.message}`);
+    }
+  }
+  }
+
+  async translateOption(text: string, lang: string = 'en', retries: number = 2, delay: number = 5000): Promise<string> {
+    console.log('here', text);
+    if (lang !== 'ar') {
+      return text; // Return the original text if language is not Arabic
+    }
+    try {
+      const response = await this.aiModel.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant that translates English text into Arabic. Return in json format with object named "text" '
+          },
+          {
+            role: 'user',
+            content: `Translate the following text into Arabic: "${text}"`
+          }
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const aiResponse = response.choices[0].message.content.trim();
+      let parsedResponse = JSON.parse(aiResponse); // Parse the JSON response
+      console.log('parsedResponse', parsedResponse)
+      const message = parsedResponse.text;
+      return message;
+    } catch (error) {
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await this.translateOption( text,lang,retries - 1, delay);
+    }
+    else{
+      throw new Error(`Original error: ${error.message}`);
+    }
+  }
   }
 
 
-  async generateInitialGreeting(userInput: string, nodeDescription: string): Promise<string> {
+  async generateInitialGreeting(userInput: string, nodeDescription: string, retries: number = 2, delay: number = 5000): Promise<string> {
     const prompt = initialGreetingPrompt(userInput, nodeDescription);
     try {
       const response = await this.aiModel.chat.completions.create({
@@ -108,12 +151,17 @@ export class DynamicFlowService {
       return parsedResponse.greeting;
 
     } catch (error) {
-      console.error('Error generating initial greeting:', error);
-      throw error;
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await this.generateInitialGreeting(userInput, nodeDescription, retries - 1, delay);
+    }
+    else{
+      throw new Error(`Original error: ${error.message}`);
     }
   }
+  }
 
-  async logicalEnd(userInput, nodesPromise, flow_start, messages): Promise<string> {
+  async logicalEnd(userInput, nodesPromise, flow_start, messages, retries: number = 2, delay: number = 5000): Promise<string> {
     const nodes = await nodesPromise;
     const options = nodes.map(node => `${node.name}: ${node.description}`);
     const prompt = logicalEndPrompt(userInput, nodesPromise,flow_start,messages);
@@ -134,12 +182,17 @@ export class DynamicFlowService {
       const endMessage = parsedResponse.endMessage;
       return endMessage
     } catch (error) {
-      console.error('Error processing AI response:', error);
-      throw new Error("An error occurred while processing the AI response.");
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await this.logicalEnd(userInput, nodesPromise,flow_start,messages, retries - 1, delay);
+    }
+    else{
+      throw new Error(`Failed to generate refined text. Original error: ${error.message}`);
     }
   }
+}
 
-  async refineFollowupText(userInput: string, nodeDescription: string, flow_start: string, options?: string[]): Promise<string> {
+  async refineFollowupText(userInput: string, nodeDescription: string, flow_start: string, options?: string[], retries: number = 2, delay: number = 5000): Promise<string> {
     const prompt = refineTextPrompt(userInput, nodeDescription,flow_start,options);
     try {
       const response = await this.aiModel.chat.completions.create({
@@ -157,12 +210,17 @@ export class DynamicFlowService {
       }
       return parsedResponse.text;
     } catch (error) {
-      console.error('Error refining followup text:', error);
-      throw error;
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await this.refineFollowupText(userInput, nodeDescription,flow_start,options, retries - 1, delay);
+    }
+    else{
+      throw new Error(`Original error: ${error.message}`);
     }
   }
+  }
 
-  async handleOption(userInput: string, nodeDescription: string, options: string[]): Promise<string> {
+  async handleOption(userInput: string, nodeDescription: string, options: string[], retries: number = 2, delay: number = 5000): Promise<string> {
     const prompt = handleOptionPrompt(userInput, nodeDescription,options);
     try {
       const response = await this.aiModel.chat.completions.create({
@@ -183,40 +241,16 @@ export class DynamicFlowService {
       return parsedResponse.bestMatch;
 
     } catch (error) {
-      console.error('Error refining followup text:', error);
-      throw error;
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await this.handleOption(userInput, nodeDescription,options, retries - 1, delay);
+    } else {
+      throw new Error(`Original error: ${error.message}`);
+    }
     }
   }
 
-  // async checkInfo(description: string, messages: { role: string, content: string }[]): Promise<string> {
-  //   let conversationHistory = messages.map(msg => `${msg.role === 'user' ? 'User:' : 'System:'} ${msg.content}`).join('\n');
-  //   const prompt = checkInfoPrompt(description, conversationHistory);
-  //   try {
-  //     const response = await this.aiModel.chat.completions.create({
-  //       model: "gpt-4o-mini",
-  //       messages: [
-  //         {
-  //           role: 'system',
-  //           content: prompt
-  //         },
-  //         {
-  //           role: 'user',
-  //           content: description
-  //         }
-  //       ],
-  //       response_format: { type: "json_object" },
-  //     });
-  //     const aiResponse = response.choices[0].message.content.trim();
-  //     let parsedResponse = JSON.parse(aiResponse);
-  //     const info = parsedResponse.info.trim().toLowerCase();
-  //     return info;
-  //   } catch (error) {
-  //     throw new Error('Failed to determine if user is done');
-  //   }
-  // }
-
-
-  async checkIfUserIsDone(description: string, messages: { role: string, content: string }[]): Promise<string> {
+  async checkIfUserIsDone(description: string, messages: { role: string, content: string }[], retries: number = 2, delay: number = 5000): Promise<string> {
     let conversationHistory = messages.map(msg => `${msg.role === 'user' ? 'User:' : 'System:'} ${msg.content}`).join('\n');
     const prompt = userDonePrompt(description, conversationHistory);
     try {
@@ -239,11 +273,59 @@ export class DynamicFlowService {
       const isDone = parsedResponse.isDone.trim().toLowerCase();
       return isDone;
     } catch (error) {
-      throw new Error('Failed to determine if user is done');
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await this.checkIfUserIsDone(description, messages, retries - 1, delay);
+    } else {
+      throw new Error(`Original error: ${error.message}`);
+    }
     }
   }
 
-  async generateEnhancedPrompt(finalRefinedDescription: string, messages: { role: string, content: string }[]): Promise<string> {
+  async confirmUserisDone(
+    description: string,
+    messages: { role: string, content: string }[],
+    retries: number = 2,
+    delay: number = 3000
+  ): Promise<string> 
+  {
+    let conversationHistory = messages
+      .map((msg) => `${msg.role === 'user' ? 'User:' : 'System:'} ${msg.content}`)
+      .join('\n');
+    const prompt = confirmEndOrContinuePrompt(description,conversationHistory);
+    
+    try {
+      const response = await this.aiModel.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: 'system',
+            content: prompt
+          },
+          {
+            role: 'user',
+            content: description
+          }
+        ],
+        response_format: { type: "json_object" },
+      });
+      const aiResponse = response.choices[0].message.content.trim();
+      const parsedResponse = JSON.parse(aiResponse);
+      const isDone = parsedResponse.end.trim().toLowerCase();
+      return isDone;
+      
+    } catch (error) {
+      if (retries > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return await this.confirmUserisDone(description, messages, retries - 1, delay);
+      } else {
+        throw new Error(`Original error: ${error.message}`);
+      }
+    }
+  }
+  
+
+  async generateEnhancedPrompt(finalRefinedDescription: string, messages: { role: string, content: string }[], retries: number = 2, delay: number = 5000): Promise<string> {
     let conversationPrompt = messages.map(msg => `${msg.role === 'user' ? 'User:' : 'System:'} ${msg.content}`).join('\n');
     const prompt = improvePrompt(finalRefinedDescription, conversationPrompt);
 
@@ -262,9 +344,14 @@ export class DynamicFlowService {
       return enhancedPrompt;
 
     } catch (error) {
-      console.error('Error while generating prompt:', error);
-      throw new Error('Failed to generate enhanced prompt.');
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await this.generateEnhancedPrompt(finalRefinedDescription, messages, retries - 1, delay);
     }
+    else{
+      throw new Error(`Original error: ${error.message}`);
+    }
+  }
   }
 
   async generateDynamicFlow(description: string): Promise<FlowTree> {
@@ -283,7 +370,7 @@ export class DynamicFlowService {
 
     return formattedJSON as unknown as FlowTree;  // Adjust the type casting as per your FlowTree definition
   }
-  private async getAIResponse(description: string): Promise<string> {
+  private async getAIResponse(description: string, retries: number = 2, delay: number = 5000): Promise<string> {
     try {
       const prompt = flowPrompt(description);
       const response = await this.aiModel.chat.completions.create({
@@ -300,8 +387,13 @@ export class DynamicFlowService {
       // Returning the entire message content for debugging
       return response.choices[0]?.message?.content.trim() || '{}';
     } catch (error) {
-      console.error('Error in getAIResponse:', error);
-      throw new InternalServerErrorException('Failed to get AI response');
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await this.getAIResponse(description, retries - 1, delay);
     }
+    else{
+      throw new Error(`Original error: ${error.message}`);
+    }
+  }
   }
 }

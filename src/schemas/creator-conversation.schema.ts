@@ -10,6 +10,9 @@ export class Conversation extends Document { // inherit methods from Document fo
   @Prop({ required: true }) // ALWAYS REQUIRED
   conversationId: string; // string format
 
+  @Prop({ required: true }) // ALWAYS REQUIRED
+  conversationStage: string; // string format
+
   @Prop({ }) 
   description: string; // string format
 

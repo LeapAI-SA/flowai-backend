@@ -1,12 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { BaseTracer } from 'langchain/callbacks';
 import { OpenAI } from 'openai';
 
 @Injectable()
 export class RelevanceCheckService {
     constructor(private aiModel: OpenAI) { }
 
-    async findMostRelevantNode(userInput, nodesPromise, flow_start) {
+    async findMostRelevantNode(userInput, nodesPromise, flow_start, retries: number = 2, delay: number = 5000) {
         const nodes = await nodesPromise;
         const options = nodes.map(node => `${node.name}: ${node.description}`);
         const prompt = `
@@ -50,18 +49,22 @@ export class RelevanceCheckService {
             // Find and return the matching node
             return nodes.find(node => node.name.toLowerCase() === MostRelevantNode);
         } catch (error) {
-            console.error('Error processing AI response:', error);
-            throw new Error("An error occurred while processing the AI response.");
-        }
+            if (retries > 0) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return await this.findMostRelevantNode(userInput,nodesPromise,flow_start, retries - 1, delay);
+            }
+            else{
+              throw new Error(`Original error: ${error.message}`);
+            }
     }
+}
 
 
-    async classifyInput(question: string, userInput: string, options: string[]): Promise<string> {
+    async classifyInput(question: string, userInput: string, options: string[], retries: number = 2, delay: number = 5000): Promise<string> {
         const optionsText = options.join(", ");
         const prompt = `Question: ${question}\nOptions: ${optionsText}\nUser Input: ${userInput}\nWhich option does this input best match? Simply return the option. Donot add any sentence etc before or after.
 
         Your response should be in JSON format and only contain a single object named bestMatch.
-        
         `;
         try {
 
@@ -81,13 +84,18 @@ export class RelevanceCheckService {
             }
             return parsedResponse.bestMatch; // Return just the value of bestMatch
         } catch (error) {
-            console.error('Error processing AI response:', error);
-            throw error; // Re-throw to handle upstream or log more contextually specific errors
-        }
+            if (retries > 0) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return await this.classifyInput(question,userInput,options, retries - 1, delay);
+            }
+            else{
+              throw new Error(`Original error: ${error.message}`);
+            }
+    }
     }
 
 
-    async checkRelevance(question: string, userInput: string): Promise<string> {
+    async checkRelevance(question: string, userInput: string, retries: number = 2, delay: number = 5000): Promise<string> {
         const prompt = `Question: ${question}\nUser Input: ${userInput}\nIs the input relevant to the question? Answer only with "true" or "false".
 
     Your response should be in JSON format and only contain a single object named isRelevant with values "true" or "false".`;
@@ -110,10 +118,13 @@ export class RelevanceCheckService {
 
             return parsedResponse.isRelevant.trim().toLowerCase();
         } catch (error) {
-            console.error('Error processing AI response:', error);
-            throw error;  // Re-throw the error for upstream error handling
-        }
+            if (retries > 0) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return await this.checkRelevance(question,userInput, retries - 1, delay);
+            }
+            else{
+              throw new Error(`Original error: ${error.message}`);
+            }
     }
-
-
+}
 }

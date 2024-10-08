@@ -1,11 +1,11 @@
 import { ChatOpenAI, OpenAI } from '@langchain/openai';
-import { Llama3 } from 'src/llms/llama.llm';
+// import { Llama3 } from 'src/llms/llama.llm';
 import z from 'zod';
 
 export interface FlowAiModuleOptions {
   isGlobal?: boolean;
   flowTree: FlowTree; // structure of the flow tree
-  model: OpenAI | ChatOpenAI | Llama3; // use of different language models.
+  model: OpenAI | ChatOpenAI //| Llama3; // use of different language models.
 }
 
 export enum IntentType {

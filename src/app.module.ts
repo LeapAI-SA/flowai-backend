@@ -4,18 +4,22 @@ import { AppService } from './app.service';
 import { FlowAiModule } from './flow-ai/flow-ai.module';
 import { ChatOpenAI, OpenAI } from '@langchain/openai';
 import { LanguageDetectorModule } from './language-detector/language-detector.module';
-import { ChainsModule } from './chains/chains.module';
+// import { ChainsModule } from './chains/chains.module';
 import { ElectronicStore } from './flows/main-tree';
-import { ChitchatAgentModule } from './chitchat-agent/chitchat-agent.module';
+//import { ChitchatAgentModule } from './chitchat-agent/chitchat-agent.module';
 import { ConfigModule } from '@nestjs/config';
-import { Llama3 } from './llms/llama.llm';
+// import { Llama3 } from './llms/llama.llm';
 import { FaqModule } from './faq/faq.module';
 import { MongooseModule } from '@nestjs/mongoose';
+
+let dbName: string;
 
 @Module({
   imports: [
     ConfigModule.forRoot(),
-    MongooseModule.forRoot(process.env.MONGODB_URI),
+    MongooseModule.forRoot(process.env.MONGODB_URI //,
+      // {dbName: 'FlowAI'}
+    ),
     FlowAiModule.forRoot({
       flowTree: ElectronicStore,
       // model: new Llama3({
@@ -29,8 +33,8 @@ import { MongooseModule } from '@nestjs/mongoose';
       }),
     }),
     LanguageDetectorModule,
-    ChainsModule,
-    ChitchatAgentModule,
+    //ChainsModule,
+    //ChitchatAgentModule,
     FaqModule,
   ],
   controllers: [AppController],
