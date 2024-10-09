@@ -632,11 +632,16 @@ export class FlowAiService {
               return result;
             }
             else {
-              interactionData.aiResponse = "I'm sorry, but I cannot answer questions that are not relevant to the provided context.";
+              let exitMessage=`I'm sorry, but I cannot answer questions that are not relevant to the provided context.`
+              interactionData.aiResponse = exitMessage;
+              if (lang.code=='ar'){
+                exitMessage=`أنا آسف، ولكن لا أستطيع الإجابة على الأسئلة التي لا تتعلق بالسياق المقدم.`  
+                interactionData.aiResponse = exitMessage;
+              }
               const savedInteraction = await createInteraction(this.interactionModel, interactionData);
               // No relevant node found
               result['followup'] = {
-                text: "I'm sorry, but I cannot answer questions that are not relevant to the provided context.",
+                text: exitMessage,
                 followup_type: node.type, // Assuming node.type is the current node type
                 options: await Promise.all(node.children ? node.children.map(async (child) => ({
                   title: await this.dynamicFlowService.translateOption(this.formatTitle(child.name), lang),
@@ -809,11 +814,16 @@ export class FlowAiService {
           return result;
         }
         else {
-          interactionData.aiResponse = "I'm sorry, but I cannot answer questions that are not relevant to the provided context.";
+          let exitMessage=`I'm sorry, but I cannot answer questions that are not relevant to the provided context.`
+          interactionData.aiResponse = exitMessage;
+          if (lang.code=='ar'){
+            exitMessage=`أنا آسف، ولكن لا أستطيع الإجابة على الأسئلة التي لا تتعلق بالسياق المقدم.`  
+            interactionData.aiResponse = exitMessage;
+          }
           const savedInteraction = await createInteraction(this.interactionModel, interactionData);
           // No relevant node found
           result['followup'] = {
-            text: "I'm sorry, but I cannot answer questions that are not relevant to the provided context.",
+            text: exitMessage,
             followup_type: node.type, // Assuming node.type is the current node type
             options: await Promise.all(node.children ? node.children.map(async (child) => ({
               title: await this.dynamicFlowService.translateOption(this.formatTitle(child.name), lang),
