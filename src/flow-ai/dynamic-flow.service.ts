@@ -11,10 +11,13 @@ import { refineTextPrompt } from '../assets/prompts/refineText-prompt';
 import { handleOptionPrompt } from '../assets/prompts/handleOption-prompt';
 import { confirmEndOrContinuePrompt } from '../assets/prompts/confirmUserExit-prompt';
 // import { checkInfoPrompt } from '../assets/prompts/checkInfo-prompt';
+import { LanguageDetectorService } from 'src/language-detector/language-detector.service';
 
 @Injectable()
 export class DynamicFlowService {
-  constructor(private aiModel: OpenAI) { }
+  constructor(private aiModel: OpenAI,
+    private readonly languageDetectorService: LanguageDetectorService
+  ) { }
 
   // Format JSON function to remove quotes from keys and specific values
   private formatJSON(obj: any, indent: number = 0): string {
@@ -91,42 +94,100 @@ export class DynamicFlowService {
   }
   }
 
-  async translateOption(text: string, lang: string = 'en', retries: number = 2, delay: number = 5000): Promise<string> {
-    console.log('here', text);
-    if (lang !== 'ar') {
-      return text; // Return the original text if language is not Arabic
-    }
+  async translateOption(
+    text: string,
+    lang: { code: string; name: string } = { code: 'en', name: 'English' },
+    retries: number = 2,
+    delay: number = 5000
+  ): Promise<string> {
     try {
+      // Detect the language of the input text
+      let detectedLanguage = await this.languageDetectorService.detectLanguage(text);
+  
+      // If the text is already in the target language, return it as is
+      if (detectedLanguage.code === lang.code) {
+        return text;
+      }
+  
+      // Determine the translation direction based on lang.code
+      let systemMessage = '';
+      if (lang.code === 'ar') {
+        systemMessage = 'You are a helpful assistant that translates text into Arabic. Return in JSON format with an object named "text".';
+      } else if (lang.code === 'en') {
+        systemMessage = 'You are a helpful assistant that translates text into English. Return in JSON format with an object named "text".';
+      } else {
+        // Handle other languages or default behavior
+        systemMessage = `You are a helpful assistant that translates text into ${lang.name}. Return in JSON format with an object named "text".`;
+      }
+  
+      // Adjust the user message to instruct the AI to translate into the target language
+      const userMessage = `Translate the following text into ${lang.name}: "${text}"`;
+
       const response = await this.aiModel.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
-            content: 'You are a helpful assistant that translates English text into Arabic. Return in json format with object named "text" '
+            content: systemMessage,
           },
           {
             role: 'user',
-            content: `Translate the following text into Arabic: "${text}"`
-          }
+            content: userMessage,
+          },
         ],
-        response_format: { type: "json_object" },
+        response_format: { type: 'json_object' },
       });
-
+  
       const aiResponse = response.choices[0].message.content.trim();
       let parsedResponse = JSON.parse(aiResponse); // Parse the JSON response
-      console.log('parsedResponse', parsedResponse)
       const message = parsedResponse.text;
       return message;
+  
     } catch (error) {
       if (retries > 0) {
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return await this.translateOption( text,lang,retries - 1, delay);
-    }
-    else{
-      throw new Error(`Original error: ${error.message}`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return await this.translateOption(text, lang, retries - 1, delay);
+      } else {
+        throw new Error(`Original error: ${error.message}`);
+      }
     }
   }
-  }
+
+  // async ragTranslation(
+  //   text: string,
+  //   retries: number = 2,
+  //   delay: number = 5000
+  // ): Promise<string> {
+  //   try {
+  //     const response = await this.aiModel.chat.completions.create({
+  //       model: 'gpt-4o-mini',
+  //       messages: [
+  //         {
+  //           role: 'system',
+  //             content: `You are a helpful lingual expert. Detect which language the "${text}" is in and convert it into English. Return in JSON format with an object named "text"`,
+  //         },
+  //         {
+  //           role: 'user',
+  //           content: `Translate the following "${text}" into English.`,
+  //         },
+  //       ],
+  //       response_format: { type: 'json_object' },
+  //     });
+  
+  //     const aiResponse = response.choices[0].message.content.trim();
+  //     let parsedResponse = JSON.parse(aiResponse); // Parse the JSON response
+  //     const message = parsedResponse.text;
+  //     return message;
+  
+  //   } catch (error) {
+  //     if (retries > 0) {
+  //       await new Promise((resolve) => setTimeout(resolve, delay));
+  //       return await this.ragTranslation(text, retries - 1, delay);
+  //     } else {
+  //       throw new Error(`Original error: ${error.message}`);
+  //     }
+  //   }
+  // }
 
 
   async generateInitialGreeting(userInput: string, nodeDescription: string, retries: number = 2, delay: number = 5000): Promise<string> {

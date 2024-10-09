@@ -19,6 +19,7 @@ export const flowPrompt = (description: string): string => `
     - Progress into a service_type node where users can select type of information they want.
 
     Node Naming and Hierarchical Layout:
+    - Detect the language in which "${description}" is in, ensure that the names of the nodes and descriptions are then in the same language as well.
     - Naming Conventions: Ensure that each node's name corresponds directly to the option it represents. For example, if an option presented to the user is "Buy a Car," the corresponding node should be named "Buy a Car". Do not name nodes with underscores or Hyphens etc within them.
     - Nested Structure: Nodes should be nested within each other to reflect the hierarchy of choices. Parent nodes present broad categories, and child nodes delve into more specific options based on previous selections.
     - Ensure Intermediate Nodes always have a child node.

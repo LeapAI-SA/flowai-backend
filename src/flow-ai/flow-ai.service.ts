@@ -142,6 +142,7 @@ export class FlowAiService {
     // Generate or use existing conversation ID
     const conversationIdResolved = conversationId || uuidv4(); // if not create
     const existingConversation = await getConversation(this.conversationModel, userId, conversationIdResolved); // fetch existing conversation
+    let lang= await this.languageDetectorService.detectLanguage(description)
     const pdfPath = `./uploads/files-${userId}-${conversationId}-.pdf`;
     let fileExists = false;
     let fileUploaded = false;
@@ -247,8 +248,10 @@ export class FlowAiService {
     const userStatus = await this.dynamicFlowService.checkIfUserIsDone(refinedDescription, messages);
     if (userStatus == 'true') {
       if (fileUploaded) {
-        const pdfUploadPrompt =
-          'Do you have any further information you would like to provide to help with building your chatbot?';
+        let pdfUploadPrompt = 'Do you have any further information you would like to provide to help with building your chatbot?';
+        if (lang.code=='ar'){ 
+          pdfUploadPrompt ='هل لديك أي معلومات إضافية ترغب في تقديمها للمساعدة في بناء برنامج الدردشة الآلي الخاص بك؟';
+        }
         const ongoingConversation = {
           userId,
           conversationId: conversationIdResolved,
@@ -271,8 +274,10 @@ export class FlowAiService {
         };
       }
       else {
-        const pdfUploadPrompt =
-          'Do you have any PDF to share with me for additional information?';
+        let pdfUploadPrompt = 'Do you have any PDF to share with me for additional information?';
+        if (lang.code=='ar'){ 
+          pdfUploadPrompt ='هل لديك أي ملف PDF لمشاركته معي للحصول على معلومات إضافية؟';
+        }
         const ongoingConversation = {
           userId,
           conversationId: conversationIdResolved,
@@ -325,7 +330,7 @@ export class FlowAiService {
     flow_start: string,
     followup_value: string = '',
     classifyFollowup: boolean = false,
-    lang: string = '',
+    //lang: string = '',
   ) {
     try {
       this.flowTree = await this.loadTree(treeId);
@@ -344,6 +349,8 @@ export class FlowAiService {
     const allNodes = await extractAllNodes(this.flowTree);
 
     let lastUserInput = followup_value ? followup_value : query;
+
+    let lang= await this.languageDetectorService.detectLanguage(lastUserInput)
 
     const interactionData = {
       sessionId,
@@ -364,10 +371,11 @@ export class FlowAiService {
       if (endNodeCheck !== 'Null') {
         interactionData.aiResponse = endNodeCheck;
         const savedInteraction = await createInteraction(this.interactionModel, interactionData);
-        return {
-          complete: true,
-          text: endNodeCheck
+        result['followup'] = {
+          text: endNodeCheck,
+          followup_type: node.type,
         };
+        return result;
       }
 
       if (!flow_start) {
@@ -388,7 +396,8 @@ export class FlowAiService {
 
               if (node.children) {
                 // Handle nodes with children
-                const refinedText = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, node.description);
+                let refinedText = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, node.description);
+                refinedText=await this.dynamicFlowService.translateOption(refinedText,lang);
                 let options = await Promise.all(node.children.map(async (grandchild) => ({
                   title: await this.dynamicFlowService.translateOption(this.formatTitle(grandchild.name), lang),
                   id: grandchild.name.replace(/ /g, '_')
@@ -409,7 +418,7 @@ export class FlowAiService {
                   id: option.replace(/ /g, '_')
                 })));
                 result['followup'] = {
-                  text: node.description,
+                  text: await this.dynamicFlowService.translateOption(node.description,lang),
                   followup_type: 'selection',
                   options: options,
                 };
@@ -420,7 +429,8 @@ export class FlowAiService {
               }
             } else {
               // Multiple children, list them as options
-              const refinedText = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, node.description);
+              let refinedText = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, node.description);
+              refinedText=await this.dynamicFlowService.translateOption(refinedText,lang);
               let options = await Promise.all(childrenArray.map(async (child) => ({
                 title: await this.dynamicFlowService.translateOption(this.formatTitle(child.name), lang),
                 id: child.name.replace(/ /g, '_')
@@ -442,7 +452,7 @@ export class FlowAiService {
               id: option.replace(/ /g, '_')
             })));
             result['followup'] = {
-              text: node.description,
+              text: await this.dynamicFlowService.translateOption(node.description,lang),
               followup_type: 'selection',
               options: options,
             };
@@ -452,7 +462,8 @@ export class FlowAiService {
             return result;
           } else {
             // Leaf node
-            const refinedText = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, node.description);
+            let refinedText = await this.dynamicFlowService.generateInitialGreeting(lastUserInput, node.description);
+            refinedText=await this.dynamicFlowService.translateOption(refinedText,lang);
             result['followup'] = {
               text: refinedText,
               followup_type: node.type,
@@ -518,7 +529,6 @@ export class FlowAiService {
           // Direct handling of the selection response
           let name = selectionMatch.name; // Ensure `name` is declared
           node = selectionMatch;
-          console.log('hereee')
           if (node.children || (node.child && !node.schema)) {
             try {
               // Use the processChildren function to handle child nodes
@@ -538,7 +548,8 @@ export class FlowAiService {
             }
           } else {
             // Handle the fallback where the node has no children or schema
-            const refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []);
+            let refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []);
+            refinedText=await this.dynamicFlowService.translateOption(refinedText,lang);
             result['followup'] = {
               text: refinedText,
               followup_type: node.type,
@@ -580,7 +591,7 @@ export class FlowAiService {
                 id: option.replace(/ /g, '_')
               })));
               result['followup'] = {
-                text: node.description,
+                text: await this.dynamicFlowService.translateOption(node.description,lang),
                 followup_type: 'selection',
                 options: options,
               };
@@ -590,7 +601,8 @@ export class FlowAiService {
               return result;
             } else {
               // Leaf node handling
-              const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, []);
+              let refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, []);
+              refinedText=await this.dynamicFlowService.translateOption(refinedText,lang);
               result['followup'] = {
                 text: refinedText,
                 followup_type: node.type,
@@ -602,6 +614,12 @@ export class FlowAiService {
             }
           } else {
             node = flowStartNode;
+            // let translatedRag = lastUserInput
+            // if (lang.code !='en')
+            // {
+            //   translatedRag = await this.dynamicFlowService.ragTranslation(lastUserInput)
+            // }
+            // console.log('translated rag',translatedRag)
             const answer = await this.faqService.ragChain(lastUserInput, treeId);
             if (answer !== "I'm sorry, but I cannot answer questions that are not relevant to the provided context.") {
               interactionData.aiResponse = answer;
@@ -645,8 +663,8 @@ export class FlowAiService {
         });
 
         const options = node.children && node.children.length > 0 ? node.children.map(child => child.name) : [];
-        const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, options);
-
+        let refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, options);
+        refinedText=await this.dynamicFlowService.translateOption(refinedText,lang);
         // Return the result for the current node
         result['followup'] = {
           text: refinedText,
@@ -663,36 +681,32 @@ export class FlowAiService {
         return result;
       }
       else if (mostRelevantNode && node.type === 'intermediate') {
-        console.log('intermediate');
         // Check if the node has children or if it is a selection type with a schema
 
         if (node.child) {
-          console.log('Moving to child node');
           // Move to the child node
           name = node.child.name;
           node = node.child;
         }
         else if (node.children) {
-          console.log('hereasas')
           // Move to the child node
           name = mostRelevantNode.child.name;
           node = mostRelevantNode.child;
         }
         else if (node.schema) {
-          console.log('here');
           // Handle schema options (for selection-type nodes)
           const options = await Promise.all(node.schema._def.values.map(async (option) => ({
             title: await this.dynamicFlowService.translateOption(this.formatTitle(option), lang),
             id: option.replace(/ /g, '_')
           })));
+          console.log('4 ',node.description)
           result['followup'] = {
-            text: node.description,
+            text: await this.dynamicFlowService.translateOption(node.description,lang),
             followup_type: 'selection',
             options: options,
           };
           return result;
         } else {
-          console.log('no childern or child')
           name = mostRelevantNode.name;
           node = mostRelevantNode;
         }
@@ -702,7 +716,8 @@ export class FlowAiService {
           value: node.description,
         });
         // Handle final node (text type)
-        const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start);
+        let refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start);
+        refinedText=await this.dynamicFlowService.translateOption(refinedText,lang);
         result['followup'] = {
           text: refinedText,
           followup_type: node.type,
@@ -738,8 +753,8 @@ export class FlowAiService {
         }
 
         const options = node.children && node.children.length > 0 ? node.children.map(child => child.name) : [];
-        const refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, options);
-
+        let refinedText = await this.dynamicFlowService.refineFollowupText(lastUserInput, node.description, flow_start, options);
+        refinedText=await this.dynamicFlowService.translateOption(refinedText,lang);
         if (node.children && node.children.length > 0) {
           interactionData.aiResponse = refinedText;
           const savedInteraction = await createInteraction(this.interactionModel, interactionData);
@@ -752,8 +767,9 @@ export class FlowAiService {
             }))
           )};
         } else {
+          console.log('5 ',node.description)
           result['followup'] = {
-            text: node.description,
+            text: await this.dynamicFlowService.translateOption(node.description,lang),
             followup_type: node.type,
             options: [] // No children available
           };
@@ -774,7 +790,12 @@ export class FlowAiService {
             text: endNodeCheck
           };
         }
-
+        // let translatedRag = lastUserInput
+        // if (lang.code !='en')
+        //   {
+        //     translatedRag = await this.dynamicFlowService.ragTranslation(lastUserInput)
+        //   }
+        // console.log('translated rag',translatedRag)
         const answer = await this.faqService.ragChain(lastUserInput, treeId);
         if (answer !== "I'm sorry, but I cannot answer questions that are not relevant to the provided context.") {
           interactionData.aiResponse = answer;
@@ -846,7 +867,8 @@ export class FlowAiService {
   }
 
   async handleSingleChild(node, userInput, flow_start, interactionModel, lang) {
-    const refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []); // fetching new description for new node context
+    let refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []); // fetching new description for new node context
+    refinedText=await this.dynamicFlowService.translateOption(refinedText,lang);
     let options = await Promise.all(node.children.map(async (grandchild) => ({
       title: await this.dynamicFlowService.translateOption (this.formatTitle(grandchild.name), lang),
       id: grandchild.name.replace(/ /g, '_')
@@ -855,7 +877,8 @@ export class FlowAiService {
   }
 
   async handleMultipleChildren(node, childrenArray, userInput, flow_start, interactionModel, lang) {
-    const refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []); // fetching new description for new node context
+    let refinedText = await this.dynamicFlowService.refineFollowupText(userInput, node.description, flow_start, []); // fetching new description for new node context
+    refinedText=await this.dynamicFlowService.translateOption(refinedText,lang);
     let options = await Promise.all(childrenArray.map(async(child) => ({
       title: await this.dynamicFlowService.translateOption (this.formatTitle(child.name), lang),
       id: child.name.replace(/ /g, '_')

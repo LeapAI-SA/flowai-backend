@@ -58,7 +58,7 @@ export class FlowAiController {
       body.flow_start,
       body.followup_value,
       body.classifyFollowup ?? false, // optional with default values
-      body.lang ?? '', // optional with default values
+      //body.lang ?? '', // optional with default values
     );
   }
 
