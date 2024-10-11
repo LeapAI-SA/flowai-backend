@@ -100,7 +100,8 @@ export class FlowAiService {
     finalRefinedDescription,
     messages,
     pdfPath,
-    fileExists
+    fileExists,
+    language
   ): Promise<{ treeId: string, dynamicFlowTree: any }> {
     const response = await dynamicFlowService.generateEnhancedPrompt(finalRefinedDescription, messages); //returns json that needs to be converted
 
@@ -112,7 +113,7 @@ export class FlowAiService {
       throw new InternalServerErrorException('Invalid JSON format in description');
     }
     const improvePrompt = descriptionObject.improvePrompt;
-    const dynamicFlowTree = await this.dynamicFlowService.generateDynamicFlow(improvePrompt);
+    const dynamicFlowTree = await this.dynamicFlowService.generateDynamicFlow(improvePrompt, language);
     const finalConversation = {
       userId,
       conversationId: conversationIdResolved,
@@ -143,6 +144,14 @@ export class FlowAiService {
     const conversationIdResolved = conversationId || uuidv4(); // if not create
     const existingConversation = await getConversation(this.conversationModel, userId, conversationIdResolved); // fetch existing conversation
     let lang= await this.languageDetectorService.detectLanguage(description)
+    let language ;
+    if (lang.code == 'en')
+    {
+      language ='English';
+    }
+    else {
+      language ='Arabic';
+    }
     const pdfPath = `./uploads/files-${userId}-${conversationId}-.pdf`;
     let fileExists = false;
     let fileUploaded = false;
@@ -201,7 +210,8 @@ export class FlowAiService {
         finalRefinedDescription,
         messages,
         pdfPath,
-        fileExists
+        fileExists,
+        language
       );
       return { treeId, dynamicFlowTree };
     }
@@ -219,7 +229,8 @@ export class FlowAiService {
           finalRefinedDescription,
           messages,
           pdfPath,
-          fileExists
+          fileExists,
+          language
         );
         return { treeId, dynamicFlowTree };
       }
@@ -329,7 +340,7 @@ export class FlowAiService {
     query: string,
     flow_start: string,
     followup_value: string = '',
-    classifyFollowup: boolean = false,
+    //classifyFollowup: boolean = false,
     //lang: string = '',
   ) {
     try {
@@ -351,6 +362,14 @@ export class FlowAiService {
     let lastUserInput = followup_value ? followup_value : query;
 
     let lang= await this.languageDetectorService.detectLanguage(lastUserInput)
+    let language;
+    if (lang.code == 'en')
+      {
+        language ='English';
+      }
+      else {
+        language ='Arabic';
+      }
 
     const interactionData = {
       sessionId,
@@ -367,7 +386,7 @@ export class FlowAiService {
     while (true) {
       let node = this.findByName(this.flowTree, name); // searches node by name
 
-      const endNodeCheck = await this.dynamicFlowService.logicalEnd(lastUserInput, allNodes, flow_start, messages);
+      const endNodeCheck = await this.dynamicFlowService.logicalEnd(lastUserInput, allNodes, flow_start, messages, language);
       if (endNodeCheck !== 'Null') {
         interactionData.aiResponse = endNodeCheck;
         const savedInteraction = await createInteraction(this.interactionModel, interactionData);
@@ -614,13 +633,7 @@ export class FlowAiService {
             }
           } else {
             node = flowStartNode;
-            // let translatedRag = lastUserInput
-            // if (lang.code !='en')
-            // {
-            //   translatedRag = await this.dynamicFlowService.ragTranslation(lastUserInput)
-            // }
-            // console.log('translated rag',translatedRag)
-            const answer = await this.faqService.ragChain(lastUserInput, treeId);
+            const answer = await this.faqService.ragChain(lastUserInput, treeId, language);
             if (answer !== "I'm sorry, but I cannot answer questions that are not relevant to the provided context.") {
               interactionData.aiResponse = answer;
               const savedInteraction = await createInteraction(this.interactionModel, interactionData);
@@ -641,13 +654,10 @@ export class FlowAiService {
               const savedInteraction = await createInteraction(this.interactionModel, interactionData);
               // No relevant node found
               result['followup'] = {
-                text: exitMessage,
+                text: exitMessage ,
                 followup_type: node.type, // Assuming node.type is the current node type
-                options: await Promise.all(node.children ? node.children.map(async (child) => ({
-                  title: await this.dynamicFlowService.translateOption(this.formatTitle(child.name), lang),
-                  id: child.name,
-                })) : [] // Provide current options if available
-              )};
+                options: [] // Provide current options if available
+              };
               result['intent'] = node.name; // Keep user at the same node
               return result;
             }
@@ -795,13 +805,7 @@ export class FlowAiService {
             text: endNodeCheck
           };
         }
-        // let translatedRag = lastUserInput
-        // if (lang.code !='en')
-        //   {
-        //     translatedRag = await this.dynamicFlowService.ragTranslation(lastUserInput)
-        //   }
-        // console.log('translated rag',translatedRag)
-        const answer = await this.faqService.ragChain(lastUserInput, treeId);
+        const answer = await this.faqService.ragChain(lastUserInput, treeId, language);
         if (answer !== "I'm sorry, but I cannot answer questions that are not relevant to the provided context.") {
           interactionData.aiResponse = answer;
           const savedInteraction = await createInteraction(this.interactionModel, interactionData);
@@ -825,11 +829,8 @@ export class FlowAiService {
           result['followup'] = {
             text: exitMessage,
             followup_type: node.type, // Assuming node.type is the current node type
-            options: await Promise.all(node.children ? node.children.map(async (child) => ({
-              title: await this.dynamicFlowService.translateOption(this.formatTitle(child.name), lang),
-              id: child.name,
-            })) : [] // Provide current options if available
-          )};
+            options: [] // Provide current options if available
+          };
           result['intent'] = node.name; // Keep user at the same node
           return result;
         }

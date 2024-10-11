@@ -5,6 +5,7 @@ import { QdrantClient } from '@qdrant/js-client-rest';
 import { QdrantVectorStore } from '@langchain/qdrant';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { PDFExtract } from 'pdf.js-extract';
+import { LanguageDetectorService } from 'src/language-detector/language-detector.service';
 
 const pdfExtract = new PDFExtract();
 const options = {};
@@ -16,7 +17,10 @@ export class FaqService {
   private qdrantClient: QdrantClient;
   private collectionName = 'Flow-AI-TEST';
 
-  constructor(private aiModel: OpenAI) {
+  constructor(private aiModel: OpenAI,
+    private readonly languageDetectorService: LanguageDetectorService,
+
+  ) {
     this.qdrantClient = new QdrantClient({
       apiKey: process.env.QDRANT_API_KEY,
       url: process.env.QDRANT_URL,
@@ -41,43 +45,69 @@ export class FaqService {
     }
   }
 
-  async extractTextFromPDF(pdfPath: string): Promise<string> {
+  async extractTextFromPDF(pdfPath: string, lang: string = 'en'): Promise<string> {
     return new Promise((resolve, reject) => {
-      pdfExtract.extract(pdfPath, options, (err, data) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        let fullText = '';
-        let prevY = null; // Keep track of the previous item's y-coordinate
-  
-        data.pages.forEach((page) => {
-          page.content.forEach((item, index) => {
-            // Add a space between words
-            if (index > 0) {
-              const prevItem = page.content[index - 1];
-              // Calculate the distance between words
-              const spaceBetweenWords = item.x - (prevItem.x + prevItem.width);
-              if (spaceBetweenWords > 5) {
-                fullText += ' '; // Add a space if items are far apart horizontally
-              }
+        pdfExtract.extract(pdfPath, options, async (err, data) => {
+            if (err) {
+                reject(err);
+                return;
             }
-  
-            // Detect new paragraphs based on the y-coordinate difference
-            if (prevY !== null && Math.abs(item.y - prevY) > 10) {
-              fullText += '\n'; // Add a newline if there's a vertical gap (indicating a new paragraph)
+            let fullText = '';
+            let prevY = null; // Keep track of the previous item's y-coordinate
+
+            // Process each page and each content item
+            data.pages.forEach((page) => {
+                page.content.forEach((item, index) => {
+                    // Add a space between words
+                    if (index > 0) {
+                        const prevItem = page.content[index - 1];
+                        const spaceBetweenWords = item.x - (prevItem.x + prevItem.width);
+                        if (spaceBetweenWords > 5) {
+                            fullText += ' '; // Add space if items are far apart horizontally
+                        }
+                    }
+
+                    // Detect new paragraphs based on y-coordinate difference
+                    if (prevY !== null && Math.abs(item.y - prevY) > 10) {
+                        fullText += '\n'; // Add newline for new paragraph
+                    }
+
+                    fullText += item.str;
+                    prevY = item.y; // Update previous y-coordinate
+                });
+
+                fullText += '\n\n'; // Add two newlines between pages for clarity
+            });
+            let formattedText = fullText
+            // Detect language
+            try {
+                let detectedLang = await this.languageDetectorService.detectLanguage(fullText);
+                
+                // Apply language-specific formatting based on detected language
+                if (detectedLang.code === 'en') {
+                    // English-specific formatting
+                    formattedText = formattedText
+                        .replace(/(\w+)-\n(\w+)/g, '$1$2')  // Rejoin hyphenated words
+                        .replace(/(?<!\.)\n(?!\n)/g, ' ');  // Join lines that are part of the same sentence
+                } else if (detectedLang.code === 'ar') {
+                    // Arabic-specific formatting
+                    formattedText = formattedText
+                        .replace(/(\w+)-\n(\w+)/g, '$1$2')  // Rejoin hyphenated words (Arabic context)
+                        .replace(/(?<!\.)\n(?!\n)/g, ' ');  // Join lines that are part of the same sentence
+                }
+
+                // Further cleaning: remove excess whitespace and ensure readability
+                formattedText = formattedText
+                    .replace(/\n\s+/g, '\n')    // Remove extra spaces at start of lines
+                    .replace(/\n+/g, '\n\n');   // Ensure paragraphs are separated by double newlines
+                resolve(formattedText);
+            } catch (langError) {
+                reject(langError); // Handle any error from the language detection service
             }
-  
-            fullText += item.str;
-            prevY = item.y; // Update the previous y-coordinate
-          });
-  
-          fullText += '\n\n'; // Add two newlines between pages for clarity
         });
-        resolve(fullText);
-      });
     });
-  }
+}
+
 
   async chunkText(text: string, maxChunkSize: number = 512): Promise<string[]> {
     const textSplitter = new RecursiveCharacterTextSplitter({
@@ -114,6 +144,7 @@ export class FaqService {
                     Question: "${question}"
                     Assign a relevance score in the range 0-1 where 1 means completely relevant and 0 means not relevant. 
                     Consider both semantic and conceptual matches, even if the wording is slightly different. 
+                    If the "${context}" is missing, assign a score of 0.
                     Do not give more relevance to incomplete matches or completely irrelevant information.
                     Your response should be in JSON format with an object named 'score'.`;
   
@@ -134,7 +165,6 @@ export class FaqService {
       if (!('score' in parsedResponse)) {
         throw new Error("Score is missing from the AI response.");
       }
-
       return parsedResponse.score;
     } catch (error) {
       if (retries > 0) {
@@ -183,11 +213,11 @@ export class FaqService {
     return score > 0.7;
   }
 
-  async generateAnswer(question: string, context: string, retries: number = 2, delay: number = 5000): Promise<string> {
+  async generateAnswer(question: string, context: string, language, retries: number = 2, delay: number = 5000): Promise<string> {
     const prompt = `Question: ${question}
   Context: ${context}
-  
-  Please answer the question relevant to the context. If the question is not relevant to the context, respond with a generic short message citing your inability to answer irrelevant questions.`;
+  Language : ${language}
+  Please answer the question relevant to the context. If the question is not relevant to the context, respond with a generic short message citing your inability to answer irrelevant questions. Your answer should be in the language passed.`;
   
     try {
       const response =  await this.aiModel.chat.completions.create({
@@ -209,12 +239,12 @@ export class FaqService {
   }
   }
   
-  async ragChain(question: string, treeId: string): Promise<string> {
+  async ragChain(question: string, treeId: string, language): Promise<string> {
     const contextData = await this.getContext(question, treeId);
     const isRelevant = await this.relevanceFilter(contextData.question, contextData.context);
 
     if (isRelevant) {
-      return await this.generateAnswer(contextData.question, contextData.context);
+      return await this.generateAnswer(contextData.question, contextData.context, language);
     } else {
       return "I'm sorry, but I cannot answer questions that are not relevant to the provided context.";
     }

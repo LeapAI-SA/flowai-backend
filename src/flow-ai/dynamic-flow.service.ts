@@ -153,43 +153,6 @@ export class DynamicFlowService {
     }
   }
 
-  // async ragTranslation(
-  //   text: string,
-  //   retries: number = 2,
-  //   delay: number = 5000
-  // ): Promise<string> {
-  //   try {
-  //     const response = await this.aiModel.chat.completions.create({
-  //       model: 'gpt-4o-mini',
-  //       messages: [
-  //         {
-  //           role: 'system',
-  //             content: `You are a helpful lingual expert. Detect which language the "${text}" is in and convert it into English. Return in JSON format with an object named "text"`,
-  //         },
-  //         {
-  //           role: 'user',
-  //           content: `Translate the following "${text}" into English.`,
-  //         },
-  //       ],
-  //       response_format: { type: 'json_object' },
-  //     });
-  
-  //     const aiResponse = response.choices[0].message.content.trim();
-  //     let parsedResponse = JSON.parse(aiResponse); // Parse the JSON response
-  //     const message = parsedResponse.text;
-  //     return message;
-  
-  //   } catch (error) {
-  //     if (retries > 0) {
-  //       await new Promise((resolve) => setTimeout(resolve, delay));
-  //       return await this.ragTranslation(text, retries - 1, delay);
-  //     } else {
-  //       throw new Error(`Original error: ${error.message}`);
-  //     }
-  //   }
-  // }
-
-
   async generateInitialGreeting(userInput: string, nodeDescription: string, retries: number = 2, delay: number = 5000): Promise<string> {
     const prompt = initialGreetingPrompt(userInput, nodeDescription);
     try {
@@ -222,10 +185,10 @@ export class DynamicFlowService {
   }
   }
 
-  async logicalEnd(userInput, nodesPromise, flow_start, messages, retries: number = 2, delay: number = 5000): Promise<string> {
+  async logicalEnd(userInput, nodesPromise, flow_start, messages, language, retries: number = 2, delay: number = 5000): Promise<string> {
     const nodes = await nodesPromise;
     const options = nodes.map(node => `${node.name}: ${node.description}`);
-    const prompt = logicalEndPrompt(userInput, nodesPromise,flow_start,messages);
+    const prompt = logicalEndPrompt(userInput, nodesPromise,flow_start,messages, language);
     try {
       const response = await this.aiModel.chat.completions.create({
         model: "gpt-4o-mini",
@@ -415,8 +378,8 @@ export class DynamicFlowService {
   }
   }
 
-  async generateDynamicFlow(description: string): Promise<FlowTree> {
-    const aiResponse = await this.getAIResponse(description);
+  async generateDynamicFlow(description: string, language): Promise<FlowTree> {
+    const aiResponse = await this.getAIResponse(description, language);
     // Parse the AI response JSON string into an object
     let parsedResponse: any;
     try {
@@ -431,9 +394,9 @@ export class DynamicFlowService {
 
     return formattedJSON as unknown as FlowTree;  // Adjust the type casting as per your FlowTree definition
   }
-  private async getAIResponse(description: string, retries: number = 2, delay: number = 5000): Promise<string> {
+  private async getAIResponse(description: string, language, retries: number = 2, delay: number = 5000): Promise<string> {
     try {
-      const prompt = flowPrompt(description);
+      const prompt = flowPrompt(description, language);
       const response = await this.aiModel.chat.completions.create({
         model: "gpt-4o",
         messages: [
@@ -450,7 +413,7 @@ export class DynamicFlowService {
     } catch (error) {
       if (retries > 0) {
         await new Promise(resolve => setTimeout(resolve, delay));
-        return await this.getAIResponse(description, retries - 1, delay);
+        return await this.getAIResponse(description, language, retries - 1, delay);
     }
     else{
       throw new Error(`Original error: ${error.message}`);

@@ -8,12 +8,10 @@ import { Interaction } from '../schemas/interaction.schema';
 import { Model } from 'mongoose';
 import { Conversation } from '../schemas/creator-conversation.schema';
 import { getConversation } from '../utilis/Conversation/getConversation';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { Express } from 'express'; // Import Express namespace
 import { FilesInterceptor } from '@nestjs/platform-express';
-import axios from 'axios';
 import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import * as fs from 'fs';
@@ -57,7 +55,7 @@ export class FlowAiController {
       body.query,
       body.flow_start,
       body.followup_value,
-      body.classifyFollowup ?? false, // optional with default values
+      //body.classifyFollowup ?? false, // optional with default values
       //body.lang ?? '', // optional with default values
     );
   }

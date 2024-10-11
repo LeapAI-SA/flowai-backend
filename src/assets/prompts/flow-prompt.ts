@@ -3,14 +3,21 @@ import {
     example2,
     example3,
     example4,
+    example5,
+    example6,
+    example7
   } from '../examples/example-trees';
 
 
-export const flowPrompt = (description: string): string => `
+export const flowPrompt = (description: string, language): string => {
+    const examples = language === "English"
+    ? `${example1}\n${example2}\n${example3}\n${example4}\n${example5}`
+    : `${example6}\n${example7}`;
+
+    return`
     Given the description: "${description}", generate a JSON structure representing a conversational decision tree for a chatbot, adhering strictly to the following guidelines:
     
-    The decision tree constructed should be relevant to the "${description}". Do not add, drop, modify or shuffle nodes other than what is passed on in the description. The tree
-    should be consistent with the description and not assume things which are not specified like type of business logic.
+    The decision tree constructed should be relevant to the "${description}". Do not add, drop, modify or shuffle nodes other than what is passed on in the description. The tree should be consistent with the description and not assume things which are not specified like type of business logic.
     
     Tree Structure:
     Initiate with an initial_greeting node of type IntentType.TEXT that introduces the chatbot’s services.The initial node related to greeting should not have a schema, skip writing schema there.
@@ -19,17 +26,16 @@ export const flowPrompt = (description: string): string => `
     - Progress into a service_type node where users can select type of information they want.
 
     Node Naming and Hierarchical Layout:
-    - Detect the language in which "${description}" is in, ensure that the names of the nodes and descriptions are then in the same language as well.
+    - **Detect the language which is passed to you in "${language}" , ensure that the names of the nodes and descriptions are then in the same language as well.**
     - Naming Conventions: Ensure that each node's name corresponds directly to the option it represents. For example, if an option presented to the user is "Buy a Car," the corresponding node should be named "Buy a Car". Do not name nodes with underscores or Hyphens etc within them.
     - Nested Structure: Nodes should be nested within each other to reflect the hierarchy of choices. Parent nodes present broad categories, and child nodes delve into more specific options based on previous selections.
-    - Ensure Intermediate Nodes always have a child node.
     - Every node in the tree with type selection should have children nodes for the options it is specifying.
     - Ensure that the initial greeting node has a **child node** which can then possibly have **children nodes** for the options to display to user.
 
     Node Specifications:
     - Each node in the tree should include:
         - name: A unique identifier for the node.
-        - type: Should be one of the specified IntentType values (IntentType.TEXT, IntentType.SELECTION, or IntentType.INTERMEDIATE).
+        - type: Should be one of the specified IntentType values (IntentType.TEXT, IntentType.SELECTION).
         - description: Text that explains the node's purpose or prompts the user for input.
         - schema: Validation rules using Zod, applicable for input validation. Use z.enum([...]) for selection nodes to list available options, and z.string() for text input nodes to ensure that some input is provided.
     
@@ -48,26 +54,10 @@ export const flowPrompt = (description: string): string => `
 
     Objective: The objective is to construct an informative decision tree that is intuitive and user-centric, guiding the user through a series of information that correspond to their initial and subsequent choices. 
     
-    Here are a few formatted examples to follow:
+    Here are a few formatted examples to follow when the detected language is "${language}":
 
-    ${example1}
-    ${example2}
-    ${example3}
-    ${example4}
-`
+    ${examples}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    **These examples are syntax wise and logically correct, follow the naming patterns and branching rules from them.**
+`;
+};
