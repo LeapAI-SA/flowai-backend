@@ -23,7 +23,7 @@ export const flowPrompt = (description: string, language): string => {
     Initiate with an initial_greeting node of type IntentType.TEXT that introduces the chatbot’s services.The initial node related to greeting should not have a schema, skip writing schema there.
 
     Additional Service Nodes:
-    - Progress into a service_type node where users can select type of information they want.
+    - Progress into a service_type node where users can select type of information they want. Ensure that this node has a description greeting the user to the business, showing compassion and offering options.
 
     Node Naming and Hierarchical Layout:
     - **Detect the language which is passed to you in "${language}" , ensure that the names of the nodes and descriptions are then in the same language as well.**

@@ -10,8 +10,9 @@ import { logicalEndPrompt } from '../assets/prompts/logicalEnd-prompt';
 import { refineTextPrompt } from '../assets/prompts/refineText-prompt';
 import { handleOptionPrompt } from '../assets/prompts/handleOption-prompt';
 import { confirmEndOrContinuePrompt } from '../assets/prompts/confirmUserExit-prompt';
-// import { checkInfoPrompt } from '../assets/prompts/checkInfo-prompt';
+import { checkInfoPrompt } from '../assets/prompts/checkInfo-prompt';
 import { LanguageDetectorService } from 'src/language-detector/language-detector.service';
+// import { generateMermaidDiagram } from '../utilis/treeTraversal/treeImage';
 
 @Injectable()
 export class DynamicFlowService {
@@ -79,7 +80,6 @@ export class DynamicFlowService {
       const aiResponse = response.choices[0].message.content.trim();
       let parsedResponse = JSON.parse(aiResponse); // Parse the JSON response
       const message = parsedResponse.message;
-
       const followUpPrompts = [message];
 
       return { message, followUpPrompts, fileUploaded };
@@ -349,6 +349,35 @@ export class DynamicFlowService {
   }
   
 
+  // async checkInfo(description: string, messages: { role: string, content: string }[], retries: number = 2, delay: number = 5000): Promise<string> {
+  //   let conversationPrompt = messages.map(msg => `${msg.role === 'user' ? 'User:' : 'System:'} ${msg.content}`).join('\n');
+  //   const prompt = checkInfoPrompt(description, conversationPrompt);
+
+  //   try {
+  //     const response = await this.aiModel.chat.completions.create({
+  //       model: "gpt-4o-mini",
+  //       messages: [
+  //         {
+  //           role: 'system',
+  //           content: prompt
+  //         }
+  //       ],
+  //       response_format: { type: "json_object" },
+  //     });
+  //     const enhancedPrompt = response.choices[0].message.content.trim();
+  //     return enhancedPrompt;
+
+  //   } catch (error) {
+  //     if (retries > 0) {
+  //       await new Promise(resolve => setTimeout(resolve, delay));
+  //       return await this.generateEnhancedPrompt(description, messages, retries - 1, delay);
+  //   }
+  //   else{
+  //     throw new Error(`Original error: ${error.message}`);
+  //   }
+  // }
+  // }
+
   async generateEnhancedPrompt(finalRefinedDescription: string, messages: { role: string, content: string }[], retries: number = 2, delay: number = 5000): Promise<string> {
     let conversationPrompt = messages.map(msg => `${msg.role === 'user' ? 'User:' : 'System:'} ${msg.content}`).join('\n');
     const prompt = improvePrompt(finalRefinedDescription, conversationPrompt);
@@ -378,8 +407,10 @@ export class DynamicFlowService {
   }
   }
 
-  async generateDynamicFlow(description: string, language): Promise<FlowTree> {
+
+  async generateDynamicFlow(description: string, language): Promise<{ formattedJSON: any}> {
     const aiResponse = await this.getAIResponse(description, language);
+    
     // Parse the AI response JSON string into an object
     let parsedResponse: any;
     try {
@@ -388,12 +419,13 @@ export class DynamicFlowService {
       console.error('Error parsing AI response JSON:', parseError);
       throw new InternalServerErrorException('Invalid JSON format from AI response');
     }
-
+  
     // Format the JSON as per your requirements
     const formattedJSON = this.formatJSON(parsedResponse);
-
-    return formattedJSON as unknown as FlowTree;  // Adjust the type casting as per your FlowTree definition
+  
+    return { formattedJSON };  // Return formatted JSON
   }
+  
   private async getAIResponse(description: string, language, retries: number = 2, delay: number = 5000): Promise<string> {
     try {
       const prompt = flowPrompt(description, language);

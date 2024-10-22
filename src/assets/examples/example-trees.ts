@@ -385,11 +385,11 @@ FlowTree: {
 export const example6 = `
 Description: "This section is for an informative chatbot made in Arabic Language.
 FlowTree: {
-  name: "initial_greeting",
+  name: "تحية_أولية",
   type: IntentType.TEXT,
   description: "مرحبًا بك في Leap AI! نحن نقدم خدمات برمجية وخدمات إنشاء محتوى. كيف يمكننا مساعدتك اليوم؟",
   child: {
-    name: "service_type",
+    name: "نوع_الخدمة",
     type: IntentType.SELECTION,
     description: "يرجى اختيار نوع المعلومات التي تريدها.",
     schema: z.enum(['خدمات برمجية', 'خدمات إنشاء محتوى']),
@@ -437,11 +437,11 @@ FlowTree: {
 export const example7 = `
 Description: "This section is for an informative chatbot made in Arabic Language.
 FlowTree: {
-  "name": "initial_greeting",
+  "name": "تحية_أولية",
   "type": "IntentType.TEXT",
   "description": "مرحبًا بك في Leap AI! نحن نقدم خدمات تطوير الويب وتطوير الذكاء الاصطناعي. كيف يمكننا مساعدتك اليوم؟",
   "child": {
-    "name": "service_type",
+    "name": "نوع_الخدمة",
     "type": IntentType.SELECTION,
     "description": "يرجى اختيار نوع المعلومات التي تريدها.",
     "schema": "z.enum(['تطوير الويب', 'تطوير الذكاء الاصطناعي', 'محفظة'])",

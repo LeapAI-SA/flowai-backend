@@ -11,12 +11,19 @@ import { ConfigModule } from '@nestjs/config';
 // import { Llama3 } from './llms/llama.llm';
 import { FaqModule } from './faq/faq.module';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
+
+
 
 let dbName: string;
 
 @Module({
   imports: [
     ConfigModule.forRoot(),
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname,'static'),  // 'public' is the directory where your static files are
+    }),
     MongooseModule.forRoot(process.env.MONGODB_URI //,
       // {dbName: 'FlowAI'}
     ),

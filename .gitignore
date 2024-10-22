@@ -36,3 +36,10 @@ lerna-debug.log*
 
 .env
 /uploads
+
+FAQ ARABIC.pdf
+FAQ ARABIC 2.pdf
+LEAP FAQS.pdf
+test.ipynb
+
+src/flow-ai/image-generation.ts

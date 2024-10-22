@@ -1,0 +1,71 @@
+/* TreeList.css */
+
+.tree-list-container {
+  width: 80%;
+  margin: 0 auto;
+  background-color: #f9f9f9;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.title {
+  text-align: center;
+  color: #333;
+  font-family: 'Arial', sans-serif;
+  margin-bottom: 20px;
+}
+
+.tree-list {
+  list-style-type: none;
+  padding: 0;
+}
+
+.tree-item {
+  margin-bottom: 20px;
+  padding: 10px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  transition: box-shadow 0.3s;
+}
+
+.tree-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.tree-info {
+  font-family: 'Arial', sans-serif;
+}
+
+.tree-id-link {
+  color: #007bff;
+  text-decoration: none;
+}
+
+.tree-id-link:hover {
+  text-decoration: underline;
+}
+
+.description-text {
+  color: #555;
+  cursor: pointer;
+  margin-top: 5px;
+  line-height: 1.5;
+  font-family: 'Arial', sans-serif;
+  transition: color 0.3s ease, max-height 0.5s ease-in-out;
+  max-height: 2.5em;
+  overflow: hidden;
+}
+
+.description-text.collapsed {
+  max-height: 2.5em; /* Show only 2.5 lines when collapsed */
+  overflow: hidden;
+}
+
+.description-text.expanded {
+  max-height: 100em; /* Allow full height when expanded */
+}
+
+.description-text:hover {
+  color: #007bff;
+}

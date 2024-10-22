@@ -1,24 +1,40 @@
-version: '3.8'
-
 services:
-  app:
-    build: .
+  backend:
+    build:
+      context: ./  # This points to the current directory where your backend Dockerfile is located
     ports:
       - "8080:8080"
     env_file:
-      - .env
+      - .env  # Path to the backend environment file, assuming it is in the root of `civil-affairs-backend`
     depends_on:
       - mongo
+    networks:
+      - app-network  
+
+  frontend:
+    build:
+      context: ./decision-tree-editor  # Path to the frontend (React app) Dockerfile
+    ports:
+      - "3000:3000"  # React Dev Server runs on port 3000
+    env_file:
+      - ./decision-tree-editor/.env
+    depends_on:
+      - backend  # Ensure backend is available before frontend starts
+    networks:
+      - app-network
 
   mongo:
     image: mongo:6.0
     ports:
       - "27017:27017"
-    # environment:
-    #   MONGO_INITDB_ROOT_USERNAME: root
-    #   MONGO_INITDB_ROOT_PASSWORD: password
     volumes:
       - mongo-data:/data/db
+    networks:
+      - app-network  
 
 volumes:
   mongo-data:
+
+networks:
+  app-network:
+    driver: bridge

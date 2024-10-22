@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Param, UseInterceptors, UploadedFile, BadRequestException  } from '@nestjs/common';
+import { Body, Controller, Post, Get, Put, Param, UseInterceptors, UploadedFile, BadRequestException, NotFoundException  } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { FlowAiService } from './flow-ai.service';
 import { DynamicFlowService } from './dynamic-flow.service';
@@ -45,6 +45,52 @@ export class FlowAiController {
     @InjectModel(Conversation.name) private conversationModel: Model<Conversation>,
 
   ) { }
+
+  // New endpoint to fetch tree data by treeId
+@Get('tree/:treeId')
+async getTreeData(@Param('treeId') treeId: string) {
+  try {
+    // Call the service to load the tree by treeId
+    const treeData = await this.flowAiService.loadTree(treeId);
+    if (!treeData) {
+      throw new NotFoundException(`Tree not found for treeId ${treeId}`);
+    }
+    return treeData;
+  } catch (error) {
+    console.error('Error fetching tree data:', error);
+    throw new NotFoundException(`Error fetching tree data for treeId ${treeId}`);
+  }
+}
+
+@Get('trees')
+async getAllTrees() {
+  try {
+    // Fetch all trees from the database
+    const trees = await this.flowAiService.getAllTrees();
+    return trees;
+  } catch (error) {
+    console.error('Error fetching all trees:', error);
+    throw new NotFoundException('Error fetching all trees');
+  }
+}
+
+// New endpoint to update tree data by treeId
+@Put('tree/:treeId')
+async updateTreeData(@Param('treeId') treeId: string, @Body() updatedTree: any) {
+  try {
+    // Call the service to update the tree by treeId
+    const result = await this.flowAiService.updateTree(treeId, updatedTree);
+
+    if (!result) {
+      throw new NotFoundException(`Tree not found for treeId ${treeId}`);
+    }
+
+    return { message: 'Tree data updated successfully', treeId };
+  } catch (error) {
+    console.error('Error updating tree data:', error);
+    throw new BadRequestException(`Error updating tree data for treeId ${treeId}: ${error.message}`);
+  }
+}
 
   @Post() // handle POST requests to /flow-ai
   invokeFlowAI(@Body() body: any): any {
@@ -106,3 +152,5 @@ async createDynamicChatbot(
     return getConversation(this.conversationModel, userId, conversationId);  // Call the external function directly
   }
 }
+
+

@@ -8,7 +8,7 @@ export const analyzeInputPrompt = (
   
   - If conversation history is not available, it means the conversation is just starting. Tell the user that you can only help in building an information-based chatbot.
   
-  - Suggest to the user at the start of the conversation whether they need to include Services or Portfolio-related information.
+  - Suggest to the user at the start of the conversation only once that whether they need to include Services or Portfolio-related information.
   
   - If "${conversationHistory}" exists, you do not need to greet the user or suggest initial ideas.
   
