@@ -224,12 +224,12 @@ FlowTree: {
               {
                 "name": "Oppo",
                 "type": IntentType.TEXT,
-                "description": "Oppo is a Chinese brand that creates affordable phones. Thank you for choosing Electrologix, and help will be provided soon."
+                "description": "Oppo is a Chinese brand that creates affordable phones."
               },
               {
                 "name": "Redmi",
                 "type": IntentType.TEXT,
-                "description": "Redmi is a Japanese brand that offers slim smartphones. Thank you for choosing Electrologix, and help will be provided soon."
+                "description": "Redmi is a Japanese brand that offers slim smartphones."
               }
             ]
           },
@@ -242,12 +242,12 @@ FlowTree: {
               {
                 "name": "Apple",
                 "type": IntentType.TEXT,
-                "description": "Apple produces high-end exotic phones. Thank you for choosing Electrologix, and help will be provided soon."
+                "description": "Apple produces high-end exotic phones."
               },
               {
                 "name": "Samsung",
                 "type": IntentType.TEXT,
-                "description": "Samsung is known for state-of-the-art Android phones. Thank you for choosing Electrologix, and help will be provided soon."
+                "description": "Samsung is known for state-of-the-art Android phones."
               }
             ]
           }
@@ -268,12 +268,12 @@ FlowTree: {
               {
                 "name": "Haier",
                 "type": "IntentType.TEXT",
-                "description": "Haier is a Pakistani brand that creates budget-friendly TVs. Thank you for choosing Electrologix, and help will be provided soon."
+                "description": "Haier is a Pakistani brand that creates budget-friendly TVs."
               },
               {
                 "name": "Dawlance",
                 "type": IntentType.TEXT,
-                "description": "Dawlance is a Pakistani brand that manufactures locally. Thank you for choosing Electrologix, and help will be provided soon."
+                "description": "Dawlance is a Pakistani brand that manufactures locally."
               }
             ]
           },
@@ -286,12 +286,12 @@ FlowTree: {
               {
                 "name": "Orient",
                 "type": IntentType.TEXT,
-                "description": "Orient is a Taiwanese brand that produces quality TVs. Thank you for choosing Electrologix, and help will be provided soon."
+                "description": "Orient is a Taiwanese brand that produces quality TVs."
               },
               {
                 "name": "Philips",
                 "type": IntentType.TEXT,
-                "description": "Philips is a Korean brand recognized for robust TVs. Thank you for choosing Electrologix, and help will be provided soon."
+                "description": "Philips is a Korean brand recognized for robust TVs."
               }
             ]
           },
@@ -304,12 +304,12 @@ FlowTree: {
               {
                 "name": "Samsung",
                 "type": IntentType.TEXT,
-                "description": "Samsung is noted for excellent color schemas. Thank you for choosing Electrologix, and help will be provided soon."
+                "description": "Samsung is noted for excellent color schemas."
               },
               {
                 "name": "Sony",
                 "type": IntentType.TEXT,
-                "description": "Sony is praised for offering outstanding smart TVs. Thank you for choosing Electrologix, and help will be provided soon."
+                "description": "Sony is praised for offering outstanding smart TVs."
               }
             ]
           }
@@ -341,17 +341,17 @@ FlowTree: {
           {
             "name": "Denting Service",
             "type": IntentType.TEXT,
-            "description": "Our Denting Service includes repairing vehicle damages by removing dents and painting the vehicle. Thank you for choosing us, and help will be provided soon."
+            "description": "Our Denting Service includes repairing vehicle damages by removing dents and painting the vehicle."
           },
           {
             "name": "Oil Change",
             "type": IntentType.TEXT,
-            "description": "Our Oil Change service involves replacing the engine oil and rehauling the car. Thank you for choosing us, and help will be provided soon."
+            "description": "Our Oil Change service involves replacing the engine oil and rehauling the car."
           },
           {
             "name": "Lights Modification",
             "type": IntentType.TEXT,
-            "description": "Our Lights Modification service will enhance your vehicle's lighting system. Thank you for choosing us, and help will be provided soon."
+            "description": "Our Lights Modification service will enhance your vehicle's lighting system."
           }
         ]
       },
@@ -364,19 +364,19 @@ FlowTree: {
           {
             "name": "Tyre Replacement",
             "type": IntentType.TEXT,
-            "description": "Our Tyre Replacement service involves replacing existing tyres with brand new ones. Thank you for choosing us, and help will be provided soon."
+            "description": "Our Tyre Replacement service involves replacing existing tyres with brand new ones."
           },
           {
             "name": "Body Replacement",
             "type": IntentType.TEXT,
-            "description": "Our Body Replacement service gives your bike a brand new look by changing its body. Thank you for choosing us, and help will be provided soon."
+            "description": "Our Body Replacement service gives your bike a brand new look by changing its body."
           }
         ]
       },
       {
         "name": "Home Visitation",
         "type": IntentType.TEXT,
-        "description": "Our Home Visitation service involves our team visiting your vehicle at home, inspecting it, and providing services based on its condition. Thank you for choosing us, and help will be provided soon."
+        "description": "Our Home Visitation service involves our team visiting your vehicle at home, inspecting it, and providing services based on its condition."
       }
     ]
   }

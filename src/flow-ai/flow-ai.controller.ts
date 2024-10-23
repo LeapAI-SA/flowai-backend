@@ -36,7 +36,7 @@ const fileFilter = (req: any, file: Express.Multer.File, callback: Function) => 
   }
 };
 
-@Controller('flow-ai') // decorates Flow AiController class handling  /flow-ai routes
+@Controller('api/flow-ai') // decorates Flow AiController class handling  /flow-ai routes
 export class FlowAiController {
   constructor(private readonly flowAiService: FlowAiService,
     private readonly dynamicFlowService: DynamicFlowService,

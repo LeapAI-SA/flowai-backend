@@ -127,7 +127,6 @@ export class FlowAiService {
     language
   ): Promise<{ treeId: string, dynamicFlowTree }> {
     const response = await dynamicFlowService.generateEnhancedPrompt(finalRefinedDescription, messages); //returns json that needs to be converted
-
     let descriptionObject: any;
     try {
       descriptionObject = JSON.parse(response);
@@ -149,7 +148,7 @@ export class FlowAiService {
       aiResponse: JSON.stringify(dynamicFlowTree)
     };
     await createConversation(this.conversationModel, finalConversation);
-    const savedFlowTree = await this.saveDynamicFlowTree(userId, finalRefinedDescription, dynamicFlowTree);
+    const savedFlowTree = await this.saveDynamicFlowTree(userId, improvePrompt, dynamicFlowTree);
     const treeId = savedFlowTree.treeId
     try {
       fileExists = fs.existsSync(pdfPath);
