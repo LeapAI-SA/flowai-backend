@@ -1,10 +1,5 @@
-variable "backend_docker_image_name" {
-  description = "Name of the Backend Docker image"
-  type        = string
-}
-
-variable "frontend_docker_image_name" {
-  description = "Name of the Frontend Docker image"
+variable "docker_image_name" {
+  description = "Name of the Docker image"
   type        = string
 }
 

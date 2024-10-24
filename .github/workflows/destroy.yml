@@ -6,11 +6,9 @@ on:
       - '*'
 
 env:
-  PROJECT_ID: leapai-396111
-  REGION_NAME: me-central1
-  MAX_INSTANCES: 5
-  BACKEND_SERVICE_NAME: backend
-  FRONTEND_SERVICE_NAME: frontend
+  PROJECT_ID: leapai-396111 # Change if needed
+  REGION_NAME: me-central1 # Change if needed
+  MAX_INSTANCES: 5 # Change if needed
 
 jobs:
   destroy:
@@ -26,64 +24,11 @@ jobs:
           project-id: ${{ env.PROJECT_ID }}
           region-name: ${{ env.REGION_NAME }}
           gcp-sa-key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_FILE }}
-
-      # Extract the branch name that was deleted
-      - name: Get deleted branch name
-        id: branch_name
-        run: echo "BRANCH_NAME=${GITHUB_EVENT_REF##*/}" >> $GITHUB_ENV
-
-      # Initialize Terraform
-      - name: Terraform Init
-        run: |
-          PROJECT_ID_HASH=$(echo -n "${{ env.PROJECT_ID }}" | sha256sum | cut -d" " -f1 | cut -c1-5)
-          BUCKET_NAME="tf-state-${{ github.event.repository.name }}-${PROJECT_ID_HASH}"
-          
-          terraform -chdir=terraform/ init \
-            -backend-config="bucket=${BUCKET_NAME}" \
-            -backend-config="prefix=${{ github.event.repository.name }}/terraform/state"
-
-      # Clean up Cloud Run services first
-      - name: Delete Cloud Run services
-        run: |
-          gcloud run services delete ${{ env.BACKEND_SERVICE_NAME }} \
-            --platform managed \
-            --region ${{ env.REGION_NAME }} \
-            --quiet || true
-          
-          gcloud run services delete ${{ env.FRONTEND_SERVICE_NAME }} \
-            --platform managed \
-            --region ${{ env.REGION_NAME }} \
-            --quiet || true
-
-      # Clean up Artifact Registry repositories
-      - name: Delete Artifact Registry repositories
-        run: |
-          gcloud artifacts repositories delete ${{ env.BACKEND_SERVICE_NAME }} \
-            --location ${{ env.REGION_NAME }} \
-            --quiet || true
-          
-          gcloud artifacts repositories delete ${{ env.FRONTEND_SERVICE_NAME }} \
-            --location ${{ env.REGION_NAME }} \
-            --quiet || true
-
-      # Run Terraform destroy as final cleanup
+       
       - name: Terraform Destroy
         env:
-          TF_VAR_backend_docker_image_name: ${{ env.BACKEND_SERVICE_NAME }}
-          TF_VAR_frontend_docker_image_name: ${{ env.FRONTEND_SERVICE_NAME }}
+          TF_VAR_docker_image_name: ${{ env.DOCKER_IMAGE_NAME }}
           TF_VAR_project_id: ${{ env.PROJECT_ID }}
           TF_VAR_region_name: ${{ env.REGION_NAME }}
           TF_VAR_max_instances: ${{ env.MAX_INSTANCES }}
-        run: |
-          terraform -chdir=terraform/ destroy -auto-approve || true
-
-      # Cleanup any remaining Docker images
-      - name: Cleanup Docker images
-        run: |
-          gcloud container images delete \
-            ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }}/${{ env.BACKEND_SERVICE_NAME }} \
-            --quiet --force-delete-tags || true
-          
-          gcloud container images delete \
-            ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }}/${{ env.FRONTEND_SERVICE_NAME }} \
-            --quiet --force-delete-tags || true
+        run: terraform -chdir=terraform/ destroy -auto-approve

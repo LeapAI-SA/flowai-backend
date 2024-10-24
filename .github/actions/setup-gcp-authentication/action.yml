@@ -1,5 +1,5 @@
 name: 'Initialization Script'
-description: 'Setup multiple things such as GCP and Terraform'
+description: 'Setup multiple things such as GCP and terraform'
 
 inputs:
   project-id:
@@ -20,19 +20,16 @@ runs:
 
     - name: Extract branch name
       shell: bash
-      run: |
-        echo "BRANCH_NAME=$(echo ${{ github.event.ref }} | sed 's/refs\/heads\///' | sed 's/[^a-zA-Z0-9-]/-/g' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      run: echo "BRANCH_NAME=$(echo ${{ github.event.ref }} | sed 's/refs\/heads\///' | sed 's/[^a-zA-Z0-9-]/-/g' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
-    - name: Set up repository name
+    - name: Set up repo name
       shell: bash
       run: |
         echo "REPO_NAME=$(echo ${{ github.repository }} | sed 's/[^/]*\///' | sed 's/[^a-zA-Z0-9-]/-/g' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
-    - name: Set up service names
+        
+    - name: Set up DOCKER_IMAGE_NAME
       shell: bash
-      run: |
-        echo "BACKEND_SERVICE_NAME=backend" >> $GITHUB_ENV
-        echo "FRONTEND_SERVICE_NAME=frontend" >> $GITHUB_ENV
+      run: echo "DOCKER_IMAGE_NAME=${{ env.REPO_NAME }}-${{ env.BRANCH_NAME }}" >> $GITHUB_ENV
 
     - name: Set up GCP Authentication
       shell: bash
@@ -42,15 +39,16 @@ runs:
         echo "$GCP_SA_KEY" > gcp-sa-key.json
         gcloud auth activate-service-account --key-file=gcp-sa-key.json
 
-    - name: Set up GCP Project ID
+    - name: Setup GCP Project ID
       shell: bash
       run: |
         gcloud config set project ${{ inputs.project-id }}
 
-    - name: Authenticate GCP with Docker
+    - name: Auth GCP with Docker
       shell: bash
       run: |
         gcloud auth configure-docker ${{ inputs.region-name }}-docker.pkg.dev
+
 
     - name: Terraform Init
       id: init
@@ -58,11 +56,9 @@ runs:
       run: |
         PROJECT_ID_HASH=$(echo -n "${{ inputs.project-id }}" | sha256sum | cut -d" " -f1 | cut -c1-5)
         BUCKET_NAME="tf-state-${{ env.REPO_NAME }}-${PROJECT_ID_HASH}"
-
+        
         if ! gsutil ls gs://${BUCKET_NAME}/; then
           gsutil mb -b on -l ${{ inputs.region-name }} gs://${BUCKET_NAME}/
         fi
 
-        terraform -chdir=terraform/ init \
-          -backend-config="bucket=${BUCKET_NAME}" \
-          -backend-config="prefix=${{ env.REPO_NAME }}/terraform/state"
+        terraform -chdir=terraform/ init -backend-config="bucket=${BUCKET_NAME}" -backend-config="prefix=${{ env.DOCKER_IMAGE_NAME }}/terraform/state"

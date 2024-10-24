@@ -9,8 +9,6 @@ env:
   PROJECT_ID: leapai-396111 # Change if needed
   REGION_NAME: me-central1 # Change if needed
   MAX_INSTANCES: 5 # Change if needed
-  BACKEND_SERVICE_NAME: backend
-  FRONTEND_SERVICE_NAME: frontend
 
 jobs:
   deploy:
@@ -37,17 +35,10 @@ jobs:
           region-name: ${{ env.REGION_NAME }}
           gcp-sa-key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_FILE }}
 
-      - name: Build and tag Backend Docker image
+      - name: Build and tag Docker image
         run: |
-          # Build backend Docker image
-          docker build -t ${{ env.BACKEND_SERVICE_NAME }} -f ./Dockerfile .
-          docker tag ${{ env.BACKEND_SERVICE_NAME }} ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }}/${{ env.BACKEND_SERVICE_NAME }}
-
-      - name: Build and tag Frontend Docker image
-        run: |
-          # Build frontend Docker image
-          docker build -t ${{ env.FRONTEND_SERVICE_NAME }} -f ./decision-tree-editor/Dockerfile ./decision-tree-editor
-          docker tag ${{ env.FRONTEND_SERVICE_NAME }} ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }}/${{ env.FRONTEND_SERVICE_NAME }}
+          docker build -t ${{ env.DOCKER_IMAGE_NAME }} .
+          docker tag ${{ env.DOCKER_IMAGE_NAME }} ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.DOCKER_IMAGE_NAME }}/${{ env.DOCKER_IMAGE_NAME }}
 
       - name: Terraform Validate
         id: validate
@@ -56,25 +47,19 @@ jobs:
 
       - name: Terraform apply
         env:
-          TF_VAR_backend_docker_image_name: ${{ env.BACKEND_SERVICE_NAME }}
-          TF_VAR_frontend_docker_image_name: ${{ env.FRONTEND_SERVICE_NAME }}
+          TF_VAR_docker_image_name: ${{ env.DOCKER_IMAGE_NAME }}
           TF_VAR_project_id: ${{ env.PROJECT_ID }}
           TF_VAR_region_name: ${{ env.REGION_NAME }}
           TF_VAR_max_instances: ${{ env.MAX_INSTANCES }}
-        run: terraform -chdir=terraform/ apply -target=google_artifact_registry_repository.backend_repo -target=google_artifact_registry_repository.frontend_repo -auto-approve
+        run: terraform -chdir=terraform/ apply -target=google_artifact_registry_repository.repo -auto-approve
 
-      - name: Push Backend Docker image 
+      - name: Push Docker image 
         run: |
-          docker push ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }}/${{ env.BACKEND_SERVICE_NAME }}
-
-      - name: Push Frontend Docker image 
-        run: |
-          docker push ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }}/${{ env.FRONTEND_SERVICE_NAME }}
+          docker push ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.DOCKER_IMAGE_NAME }}/${{ env.DOCKER_IMAGE_NAME }}
 
       - name: Terraform apply after docker push
         env:
-          TF_VAR_backend_docker_image_name: ${{ env.BACKEND_SERVICE_NAME }}
-          TF_VAR_frontend_docker_image_name: ${{ env.FRONTEND_SERVICE_NAME }}
+          TF_VAR_docker_image_name: ${{ env.DOCKER_IMAGE_NAME }}
           TF_VAR_project_id: ${{ env.PROJECT_ID }}
           TF_VAR_region_name: ${{ env.REGION_NAME }}
           TF_VAR_max_instances: ${{ env.MAX_INSTANCES }}          
@@ -82,22 +67,6 @@ jobs:
           TF_VAR_dynamic_env_secrets: ${{ env.TF_VAR_dynamic_env_secrets }}
         run: terraform -chdir=terraform/ apply -auto-approve
 
-      - name: Deploy Backend Docker image
+      - name: Deploy Docker image
         run: |
-          gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
-            --image ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }}/${{ env.BACKEND_SERVICE_NAME }} \
-            --platform managed \
-            --region ${{ env.REGION_NAME }} \
-            --allow-unauthenticated \
-            --max-instances ${{ env.MAX_INSTANCES }} \
-            --port 8080
-
-      - name: Deploy Frontend Docker image
-        run: |
-          gcloud run deploy ${{ env.FRONTEND_SERVICE_NAME }} \
-            --image ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }}/${{ env.FRONTEND_SERVICE_NAME }} \
-            --platform managed \
-            --region ${{ env.REGION_NAME }} \
-            --allow-unauthenticated \
-            --max-instances ${{ env.MAX_INSTANCES }} \
-            --port 80
+          gcloud run deploy ${{ env.DOCKER_IMAGE_NAME }} --image ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.DOCKER_IMAGE_NAME }}/${{ env.DOCKER_IMAGE_NAME }} --platform managed --region ${{ env.REGION_NAME }} --max-instances ${{ env.MAX_INSTANCES }}
