@@ -37,15 +37,17 @@ jobs:
           region-name: ${{ env.REGION_NAME }}
           gcp-sa-key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_FILE }}
 
-      - name: Build Backend Docker Image
+      - name: Build and tag Backend Docker image
         run: |
           # Build backend Docker image
-          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }} -f ./Dockerfile .
+          docker build -t ${{ env.BACKEND_SERVICE_NAME }} -f ./Dockerfile .
+          docker tag ${{ env.BACKEND_SERVICE_NAME }} ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }}/${{ env.BACKEND_SERVICE_NAME }}
 
-      - name: Build Frontend Docker Image
+      - name: Build and tag Frontend Docker image
         run: |
           # Build frontend Docker image
-          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }} -f ./decision-tree-editor/Dockerfile ./decision-tree-editor
+          docker build -t ${{ env.FRONTEND_SERVICE_NAME }} -f ./decision-tree-editor/Dockerfile ./decision-tree-editor
+          docker tag ${{ env.FRONTEND_SERVICE_NAME }} ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }}/${{ env.FRONTEND_SERVICE_NAME }}
 
       - name: Terraform Validate
         id: validate
@@ -54,23 +56,25 @@ jobs:
 
       - name: Terraform apply
         env:
-          TF_VAR_docker_image_name: ${{ env.DOCKER_IMAGE_NAME }}
+          TF_VAR_backend_docker_image_name: ${{ env.BACKEND_SERVICE_NAME }}
+          TF_VAR_frontend_docker_image_name: ${{ env.FRONTEND_SERVICE_NAME }}
           TF_VAR_project_id: ${{ env.PROJECT_ID }}
           TF_VAR_region_name: ${{ env.REGION_NAME }}
           TF_VAR_max_instances: ${{ env.MAX_INSTANCES }}
         run: terraform -chdir=terraform/ apply -target=google_artifact_registry_repository.repo -auto-approve
 
-      - name: Push Backend Docker Image
+      - name: Push Backend Docker image 
         run: |
-          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }}
+          docker push ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }}/${{ env.BACKEND_SERVICE_NAME }}
 
-      - name: Push Frontend Docker Image
+      - name: Push Frontend Docker image 
         run: |
-          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }}
+          docker push ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }}/${{ env.FRONTEND_SERVICE_NAME }}
 
       - name: Terraform apply after docker push
         env:
-          TF_VAR_docker_image_name: ${{ env.DOCKER_IMAGE_NAME }}
+          TF_VAR_backend_docker_image_name: ${{ env.BACKEND_SERVICE_NAME }}
+          TF_VAR_frontend_docker_image_name: ${{ env.FRONTEND_SERVICE_NAME }}
           TF_VAR_project_id: ${{ env.PROJECT_ID }}
           TF_VAR_region_name: ${{ env.REGION_NAME }}
           TF_VAR_max_instances: ${{ env.MAX_INSTANCES }}          
@@ -78,20 +82,20 @@ jobs:
           TF_VAR_dynamic_env_secrets: ${{ env.TF_VAR_dynamic_env_secrets }}
         run: terraform -chdir=terraform/ apply -auto-approve
 
-      - name: Deploy Backend Service
+      - name: Deploy Backend Docker image
         run: |
           gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
-            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }} \
+            --image ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }}/${{ env.BACKEND_SERVICE_NAME }} \
             --platform managed \
             --region ${{ env.REGION_NAME }} \
             --allow-unauthenticated \
             --max-instances ${{ env.MAX_INSTANCES }} \
             --port 8080
 
-      - name: Deploy Frontend Service
+      - name: Deploy Frontend Docker image
         run: |
           gcloud run deploy ${{ env.FRONTEND_SERVICE_NAME }} \
-            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }} \
+            --image ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }}/${{ env.FRONTEND_SERVICE_NAME }} \
             --platform managed \
             --region ${{ env.REGION_NAME }} \
             --allow-unauthenticated \
