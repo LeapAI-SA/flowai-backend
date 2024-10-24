@@ -61,7 +61,7 @@ jobs:
           TF_VAR_project_id: ${{ env.PROJECT_ID }}
           TF_VAR_region_name: ${{ env.REGION_NAME }}
           TF_VAR_max_instances: ${{ env.MAX_INSTANCES }}
-        run: terraform -chdir=terraform/ apply -target=google_artifact_registry_repository.repo -auto-approve
+        run: terraform -chdir=terraform/ apply -target=google_artifact_registry_repository.backend_repo -target=google_artifact_registry_repository.frontend_repo -auto-approve
 
       - name: Push Backend Docker image 
         run: |
