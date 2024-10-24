@@ -9,6 +9,8 @@ env:
   PROJECT_ID: leapai-396111 # Change if needed
   REGION_NAME: me-central1 # Change if needed
   MAX_INSTANCES: 5 # Change if needed
+  BACKEND_SERVICE_NAME: backend
+  FRONTEND_SERVICE_NAME: frontend
 
 jobs:
   deploy:
@@ -35,10 +37,15 @@ jobs:
           region-name: ${{ env.REGION_NAME }}
           gcp-sa-key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_FILE }}
 
-      - name: Build and tag Docker image
+      - name: Build Backend Docker Image
         run: |
-          docker build -t ${{ env.DOCKER_IMAGE_NAME }} .
-          docker tag ${{ env.DOCKER_IMAGE_NAME }} ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.DOCKER_IMAGE_NAME }}/${{ env.DOCKER_IMAGE_NAME }}
+          # Build backend Docker image
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }} -f ./Dockerfile .
+
+      - name: Build Frontend Docker Image
+        run: |
+          # Build frontend Docker image
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }} -f ./decision-tree-editor/Dockerfile ./decision-tree-editor
 
       - name: Terraform Validate
         id: validate
@@ -53,9 +60,13 @@ jobs:
           TF_VAR_max_instances: ${{ env.MAX_INSTANCES }}
         run: terraform -chdir=terraform/ apply -target=google_artifact_registry_repository.repo -auto-approve
 
-      - name: Push Docker image 
+      - name: Push Backend Docker Image
         run: |
-          docker push ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.DOCKER_IMAGE_NAME }}/${{ env.DOCKER_IMAGE_NAME }}
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }}
+
+      - name: Push Frontend Docker Image
+        run: |
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }}
 
       - name: Terraform apply after docker push
         env:
@@ -67,6 +78,22 @@ jobs:
           TF_VAR_dynamic_env_secrets: ${{ env.TF_VAR_dynamic_env_secrets }}
         run: terraform -chdir=terraform/ apply -auto-approve
 
-      - name: Deploy Docker image
+      - name: Deploy Backend Service
         run: |
-          gcloud run deploy ${{ env.DOCKER_IMAGE_NAME }} --image ${{ env.REGION_NAME }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.DOCKER_IMAGE_NAME }}/${{ env.DOCKER_IMAGE_NAME }} --platform managed --region ${{ env.REGION_NAME }} --max-instances ${{ env.MAX_INSTANCES }}
+          gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
+            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.BACKEND_SERVICE_NAME }} \
+            --platform managed \
+            --region ${{ env.REGION_NAME }} \
+            --allow-unauthenticated \
+            --max-instances ${{ env.MAX_INSTANCES }} \
+            --port 8080
+
+      - name: Deploy Frontend Service
+        run: |
+          gcloud run deploy ${{ env.FRONTEND_SERVICE_NAME }} \
+            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.FRONTEND_SERVICE_NAME }} \
+            --platform managed \
+            --region ${{ env.REGION_NAME }} \
+            --allow-unauthenticated \
+            --max-instances ${{ env.MAX_INSTANCES }} \
+            --port 80

@@ -22,7 +22,7 @@ export class AppService implements OnModuleInit {
     }
   }
 
-  getHello(): string {
-    return 'Hello World!';
-  }
+  // getHello(): string {
+  //   return 'Hello World!';
+  // }
 }

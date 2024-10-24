@@ -10,8 +10,8 @@ export class AppController {
     private readonly flowAiService: FlowAiService,
   ) {}
 
-  @Get()
-  getHello(): string {
-    return this.appService.getHello();
-  }
+  // @Get()
+  // getHello(): string {
+  //   return this.appService.getHello();
+  // }
 }
